@@ -10,6 +10,7 @@ script_directory = os.path.dirname(os.path.abspath(__file__))
 datasets_directory = os.path.abspath(os.path.join(script_directory, "..", "..", "datasets"))
 
 class Cols(StrEnum):
+  Date = "Date"
   Returns = "Returns"
   LogReturns = "Log_Returns"
 
@@ -62,7 +63,21 @@ TICKERS_2022_STABLE = [Ticker.CocaCola, Ticker.Walmart, Ticker.McDonalds]
 # tech stocks took a huge hit
 TICKERS_2022_CRASH = [Ticker.Microsoft, Ticker.Apple, Ticker.Zoom]
 
-def download_data(tickers: List[Ticker], start: datetime.date, end: datetime.date, file_name: str) -> None:
+def download_data(
+  tickers: List[Ticker], 
+  start: datetime.date, 
+  end: datetime.date,
+  file_name: str
+) -> None:
+  """
+  Downloads a dataset of financial timeseries data from yfinance
+  Specifically, includes the returns and log returns for the period specified
+  
+  :param tickers: a list of tickers to get data for
+  :param start: start date of the period
+  :param end: end date of the period
+  :param file_name: where to store the data as a csv within /datasets
+  """    
   ticker_symbols = [ticker.value for ticker in tickers]
   
   data = yf.download(
@@ -87,8 +102,10 @@ def download_data(tickers: List[Ticker], start: datetime.date, end: datetime.dat
   
   returns_data.to_csv(os.path.join(datasets_directory, file_name))
   
-
-  
-  
-  
-  
+if __name__ == "__main__":
+  download_data(
+    tickers=[Ticker.Microsoft],
+    start=datetime.date(2026, 4, 20),
+    end=datetime.datetime.now(),
+    file_name="thing.csv"
+  )
