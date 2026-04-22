@@ -3,6 +3,15 @@ from enum import StrEnum
 from typing import List
 import datetime
 import numpy as np
+import pandas as pd
+import os
+
+script_directory = os.path.dirname(os.path.abspath(__file__))
+datasets_directory = os.path.abspath(os.path.join(script_directory, "..", "..", "datasets"))
+
+class Cols(StrEnum):
+  Returns = "Returns"
+  LogReturns = "Log_Returns"
 
 class Ticker(StrEnum):
   # blue chip, low-cost, consumer goods
@@ -63,19 +72,20 @@ def download_data(tickers: List[Ticker], start: datetime.date, end: datetime.dat
     auto_adjust=False
   )
   
-  simple_ret = data['Adj Close'].pct_change()
-  log_ret = np.log(1 + simple_ret)
+  if data is None:
+    print("Unable to fetch data!")
+    return
+    
+  returns_data = pd.DataFrame(index=data.index)
   
-  data.to_csv(file_name)
+  for symbol in ticker_symbols:
+    returns_col = "_".join([Cols.Returns.value, symbol])
+    log_returns_col = "_".join([Cols.LogReturns.value, symbol])
+    
+    returns_data[returns_col] = data[('Adj Close', symbol)].pct_change()
+    returns_data[log_returns_col] = np.log(1 + returns_data[returns_col])
   
-if __name__ == "__main__":
-  download_data(
-    [Ticker.Microsoft, Ticker.Mastercard],
-    start=datetime.date(2026, 4, 20),
-    end=datetime.datetime.now(),
-    file_name="file.csv"
-  )
-
+  returns_data.to_csv(os.path.join(datasets_directory, file_name))
   
 
   
