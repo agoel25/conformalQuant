@@ -92,6 +92,9 @@ def download_data(
     return
     
   returns_data = pd.DataFrame(index=data.index)
+  
+  # first data point will not have a return (since no previous to compare with)
+  # leads to NaN, so remove
   returns_data = returns_data[1:]
   
   for symbol in ticker_symbols:
