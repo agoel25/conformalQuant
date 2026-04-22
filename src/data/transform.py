@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from typing import Tuple
 
-def build_lstm_X(
+def build_deep_X(
   data: pd.DataFrame, 
   label_col_name: str,
   num_lags: int = 1
@@ -31,7 +31,7 @@ def build_lstm_X(
   
   return X
 
-def build_lstm_data(
+def build_deep_data(
     data: pd.DataFrame, 
     label_col_name: str,
     num_lags: int = 1
@@ -48,7 +48,7 @@ def build_lstm_data(
   """  
   values = data[label_col_name].values
   
-  X = build_lstm_X(data, label_col_name, num_lags)
+  X = build_deep_X(data, label_col_name, num_lags)
   y = []
   
   for i in range(len(data) - num_lags):
