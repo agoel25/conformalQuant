@@ -21,8 +21,8 @@ class BaseConformal(ABC):
     :param confidence_level: The desired probability (1 - alpha)
     """
     self.model = model_class(num_lags=num_lags, label_col_name=label_col_name)
-    self.n_lags = num_lags
-    self.label_col = label_col_name
+    self.num_lags = num_lags
+    self.label_col_name = label_col_name
     self.confidence_level = confidence_level
     self.alpha = 1 - confidence_level
     
