@@ -1,4 +1,4 @@
 yfinance
 numpy
 scikit-learn
-tensorflow
+torch 

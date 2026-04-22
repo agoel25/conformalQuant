@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Tuple, Type
 import pandas as pd
-from models.base_model import TimeSeriesModel
+from src.models.base_model import TimeSeriesModel
 
 class BaseConformal(ABC):
   """

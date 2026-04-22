@@ -102,6 +102,14 @@ def download_data(
   
   returns_data.to_csv(os.path.join(datasets_directory, file_name))
   
+def load_data(file_name: str) -> pd.DataFrame:
+  """
+  Reads the csv file at the given path and returns a Dataframe version of it
+  """
+  file_path = os.path.join(datasets_directory, file_name)
+  
+  return pd.read_csv(file_path)
+  
 if __name__ == "__main__":
   download_data(
     tickers=[Ticker.Microsoft],
@@ -109,3 +117,4 @@ if __name__ == "__main__":
     end=datetime.datetime.now(),
     file_name="thing.csv"
   )
+  

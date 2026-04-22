@@ -1,9 +1,9 @@
-from split_conformal import SplitConformal
+from src.conformal.split_conformal import SplitConformal
 from typing import override
 import numpy as np
 import pandas as pd
 from typing import Tuple, Type
-from models.base_model import TimeSeriesModel
+from src.models.base_model import TimeSeriesModel
 
 class AdaptiveConformal(SplitConformal):
   """

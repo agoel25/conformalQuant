@@ -3,8 +3,8 @@ import torch.nn as nn
 import pandas as pd
 import numpy as np
 from typing import Tuple
-from base_model import TimeSeriesModel
-from data.transform import build_deep_data
+from src.models.base_model import TimeSeriesModel
+from src.data.transform import build_deep_data
 
 class Transformer(nn.Module):
   """

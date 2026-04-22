@@ -1,6 +1,6 @@
 import pandas as pd
 from sklearn.linear_model import LinearRegression
-from base_model import TimeSeriesModel
+from src.models.base_model import TimeSeriesModel
 from typing import override
 
 class LinearARModel(TimeSeriesModel):
