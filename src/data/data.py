@@ -92,6 +92,7 @@ def download_data(
     return
     
   returns_data = pd.DataFrame(index=data.index)
+  returns_data = returns_data[1:]
   
   for symbol in ticker_symbols:
     returns_col = "_".join([Cols.Returns.value, symbol])

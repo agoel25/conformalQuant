@@ -33,9 +33,12 @@ class SplitConformal(BaseConformal):
     for i in range(self.num_lags, len(calib_data)):
       current_history = calib_data.iloc[:i]
       actual = calib_values[i]
-      
+
       prediction = self.model.predict(current_history)
       residuals.append(abs(actual - prediction))
+    
+    residuals = np.array(residuals)
+    residuals = residuals[~np.isnan(residuals)]
     
     # We use the formula: quantile = ceil((n+1)(1-alpha)) / n
     n = len(residuals)

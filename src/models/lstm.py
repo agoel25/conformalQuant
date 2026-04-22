@@ -70,7 +70,7 @@ class LSTMModel(TimeSeriesModel):
         
     last_window = data[self.label_col_name].values[-self.num_lags:]
     last_window_tensor = torch.from_numpy(last_window.astype(np.float32)).view(1, self.num_lags, 1)
-    
+
     with torch.no_grad():
       prediction = self.model(last_window_tensor)
         
