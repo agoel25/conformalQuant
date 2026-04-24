@@ -38,7 +38,11 @@ class Metrics:
     self.is_low_vol = ~self.is_high_vol
 
   def get_coverage_metrics(self) -> 'CoverageMetrics':
-    return CoverageMetrics(self.is_covered, self.is_high_vol, self.is_low_vol)
+    return CoverageMetrics(
+      self.is_covered, 
+      self.is_high_vol, 
+      self.is_low_vol
+    )
 
   def get_winkler_metrics(self) -> 'WinklerMetrics':
     return WinklerMetrics(
