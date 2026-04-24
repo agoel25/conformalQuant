@@ -227,7 +227,12 @@ Code and experiment artifacts are available at \url{https://github.com/agoel25/c
 \section{Supplementary material}
 \label{app:info}
 
-All $180$ per-run interval CSVs, the $180$-row \texttt{metrics\_long.csv} aggregate, the results-aggregator notebook, and per-model/per-wrapper notebooks are available in the linked repository. The repository's \texttt{src/metrics/Metrics.md} specifies the exact implementation of each metric.
+All $180$ per-run interval CSVs, the $180$-row \texttt{metrics\_long.csv} aggregate, the per-model and per-baseline notebooks, and the results-aggregator notebook are produced by the scripts in the linked repository. End-to-end reproduction is two commands from the project root:
+\begin{verbatim}
+python scripts/run_grid.py            # writes 180 CSVs to results/  (~15 min)
+python scripts/build_artifacts.py     # metrics_long.csv + report figures
+\end{verbatim}
+\texttt{src/metrics/Metrics.md} specifies the exact implementation of each metric, and \texttt{src/conformal/} contains the from-scratch implementations of every conformal method.
 
 \begin{table}[h]
 \caption{Marginal coverage per crisis regime, averaged over the three tickers in each regime. Selected rows; the full $20 \times 3$ matrix is in \texttt{results/metrics\_long.csv}.}
