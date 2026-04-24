@@ -1,4 +1,4 @@
-from src.conformal.base_conformal import BaseConformal
+from conformal.base import BaseConformal
 from typing import override
 import numpy as np
 import pandas as pd

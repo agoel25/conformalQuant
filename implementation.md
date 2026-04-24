@@ -105,7 +105,7 @@ All constructors accept `label_col_name` and `num_lags` as the required two argu
 
 ### 4.2 Conformal wrappers (`src/conformal/`)
 
-All subclass `BaseConformal` (`base_conformal.py`). Each wrapper owns a model instance constructed from a `model_class` passed in. Interface:
+All subclass `BaseConformal` (`base.py`). Each wrapper owns a model instance constructed from a `model_class` passed in. Interface:
 - `fit_and_calibrate(train_data, calib_data)` — fits the underlying model on train, walks calib computing residuals, stores calibration quantile
 - `predict_with_interval(data) -> (point, lower, upper)`
 

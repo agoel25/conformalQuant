@@ -1,5 +1,5 @@
 from src.models.base_model import TimeSeriesModel
-from src.conformal.base_conformal import BaseConformal
+from conformal.base import BaseConformal
 from typing import Type, override
 import numpy as np
 import pandas as pd

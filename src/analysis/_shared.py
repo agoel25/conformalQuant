@@ -16,7 +16,7 @@ from typing import Iterator, Type
 import pandas as pd
 
 from src.conformal.adaptive_conformal import AdaptiveConformal
-from src.conformal.base_conformal import BaseConformal
+from src.conformal.base import BaseConformal
 from src.conformal.split_conformal import SplitConformal
 from src.data.data import (
   Cols,

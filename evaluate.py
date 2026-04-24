@@ -1,6 +1,6 @@
 from src.conformal.split_conformal import SplitConformal
 from src.conformal.adaptive_conformal import AdaptiveConformal
-from src.conformal.base_conformal import BaseConformal
+from conformal.base import BaseConformal
 from src.conformal.enbpi_conformal import EnbPIConformal
 from src.models.linear_ar import LinearARModel
 from src.models.lstm import LSTMModel
