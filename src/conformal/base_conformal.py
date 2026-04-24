@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Tuple, Type
+import numpy as np
 import pandas as pd
 from src.models.base_model import TimeSeriesModel
 
@@ -8,9 +9,9 @@ class BaseConformal(ABC):
   A wrapper for conformal prediction that provides uncertainty bounds.
   """
   def __init__(
-    self, 
+    self,
     model_class: Type[TimeSeriesModel],
-    label_col_name: str, 
+    label_col_name: str,
     num_lags: int = 1,
     confidence_level: float = 0.95
   ):
@@ -25,8 +26,22 @@ class BaseConformal(ABC):
     self.label_col_name = label_col_name
     self.confidence_level = confidence_level
     self.alpha = 1 - confidence_level
-    
-    self.calibration_scores = None
+
+    self.residuals: np.ndarray | None = None
+    self.quantile_residuals: float | None = None
+
+  @staticmethod
+  def conformal_quantile(residuals: np.ndarray, alpha: float) -> float:
+    """
+    Finite-sample split-conformal quantile: the value at rank ceil((n+1)(1-alpha))
+    of the sorted absolute residuals. Returns +inf if the rank exceeds n, which
+    indicates the calibration set is too small to guarantee (1-alpha) coverage.
+    """
+    n = len(residuals)
+    rank = int(np.ceil((n + 1) * (1 - alpha)))
+    if rank > n:
+      return float("inf")
+    return float(np.sort(residuals)[rank - 1])
 
   @abstractmethod
   def fit_and_calibrate(self, train_data: pd.DataFrame, calib_data: pd.DataFrame | None = None):

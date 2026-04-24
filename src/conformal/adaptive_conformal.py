@@ -1,6 +1,5 @@
 from src.conformal.split_conformal import SplitConformal
 from typing import override
-import numpy as np
 import pandas as pd
 from typing import Tuple, Type
 from src.models.base_model import TimeSeriesModel
@@ -13,16 +12,16 @@ class AdaptiveConformal(SplitConformal):
   based on observed reality
   """
   def __init__(
-    self, 
+    self,
     model_class: Type[TimeSeriesModel],
-    label_col_name: str, 
+    label_col_name: str,
     step_size: float,
     num_lags: int = 1,
     confidence_level: float = 0.95
   ):
     """
     All args same as parent init
-    
+
     :param step_size: the rate at which the wrapper should adjust its confidence intervals
     """
     super().__init__(
@@ -31,10 +30,11 @@ class AdaptiveConformal(SplitConformal):
       num_lags,
       confidence_level
     )
-    
+
     self.initial_alpha = 1 - confidence_level
     self.step_size = step_size
-    
+    self.last_prediction: float | None = None
+
   @override
   def predict_with_interval(self, data: pd.DataFrame) -> Tuple[float, float, float]:
     """
@@ -42,11 +42,11 @@ class AdaptiveConformal(SplitConformal):
     Stores the new prediction for future adapting
     """
     prediction, lower_bound, upper_bound = super().predict_with_interval(data)
-    
+
     self.last_prediction = prediction
-    
+
     return float(prediction), float(lower_bound), float(upper_bound)
-  
+
   def adapt(self, real_value: float) -> None:
     """
     Adapts the wrapper by providing the real observed value for the last prediction
@@ -56,18 +56,15 @@ class AdaptiveConformal(SplitConformal):
     if self.last_prediction is None:
       print("Please predict a value first before adapting the model!")
       return
-    
+    if self.residuals is None or self.quantile_residuals is None:
+      print("Model must be calibrated before adapting. Call fit_and_calibrate first.")
+      return
+
     residual = abs(self.last_prediction - real_value)
-    
+
     error = 1 if residual > self.quantile_residuals else 0
-    
+
     self.alpha = self.alpha + self.step_size * (self.initial_alpha - error)
-    self.alpha = max(min(self.alpha, 0.5), 0.001)
-    
-    n = len(self.residuals)
-    q_level = (1 - self.alpha) * (1 + 1/n)
-    # Clip to ensure it stays within [0, 1]
-    q_level = min(max(q_level, 0.0), 1.0)
-    
-    self.quantile_residuals = np.quantile(self.residuals, q_level)
-    
+    self.alpha = max(min(self.alpha, 0.5), 1.0 / (len(self.residuals) + 1) + 1e-6)
+
+    self.quantile_residuals = self.conformal_quantile(self.residuals, self.alpha)

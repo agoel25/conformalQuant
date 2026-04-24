@@ -35,6 +35,6 @@ class LinearARModel(TimeSeriesModel):
     
   @override
   def predict(self, data: pd.DataFrame) -> float:
-    last_window = data[self.label_col_name][-self.num_lags:].reshape(1, -1)
+    last_window = data[self.label_col_name].values[-self.num_lags:].reshape(1, -1)
     prediction = self.model.predict(last_window)
     return float(prediction[0])

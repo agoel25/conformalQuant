@@ -38,10 +38,6 @@ class Ticker(StrEnum):
   Zoom = "ZM"
   
   
-TICKERS = [
-  
-]
-  
 # mostly low-cost, stable, consumer goods
 TICKERS_2008_STABLE = [Ticker.Walmart, Ticker.McDonalds, Ticker.AutoZone]
 
@@ -108,17 +104,17 @@ def download_data(
   
 def load_data(file_name: str) -> pd.DataFrame:
   """
-  Reads the csv file at the given path and returns a Dataframe version of it
+  Reads the csv file at the given path and returns a Dataframe version of it.
+  Parses Date as a DatetimeIndex so downstream code can slice by date.
   """
   file_path = os.path.join(datasets_directory, file_name)
-  
-  return pd.read_csv(file_path)
+
+  return pd.read_csv(file_path, index_col=Cols.Date.value, parse_dates=True)
   
 if __name__ == "__main__":
   download_data(
     tickers=[Ticker.Microsoft],
-    start=datetime.date(2026, 4, 20),
+    start=datetime.date(2025, 1, 1),
     end=datetime.datetime.now(),
     file_name="thing.csv"
   )
-  
