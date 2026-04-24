@@ -95,12 +95,14 @@ All subclass `TimeSeriesModel`, implement `fit(df)` and `predict(df) -> float`. 
 | Class | File | Algorithm |
 |---|---|---|
 | `LinearARModel` | `linear_ar.py` | sklearn `LinearRegression` on lagged features |
-| `LSTMModel` | `lstm.py` | single-layer LSTM + linear head (PyTorch) |
-| `TransformerModel` | `transformer_encoder.py` | 1-layer Transformer encoder + linear head (PyTorch) |
+| `LSTMModel` | `lstm.py` | single-layer LSTM (50 hidden) + linear head, mini-batch Adam + early stopping (PyTorch) |
+| `TransformerModel` | `transformer_encoder.py` | 1-layer Transformer encoder ($d_\mathrm{model}=32$, 4 heads, dropout 0.1) + linear head, mini-batch Adam + early stopping (PyTorch) |
 | `HistogramBinningModel` | `histogram_binning.py` | lag-window mean → quantile bin → memorised bin mean of next step |
 | `TreeBasedModel` | `tree_based.py` | sklearn `GradientBoostingRegressor` over lag windows |
 
 All constructors accept `label_col_name` and `num_lags` as the required two arguments (BaseConformal passes only these when instantiating the model class).
+
+**Deep model training (LSTM, Transformer):** mini-batch Adam (batch size 32, lr $10^{-3}$), 50 epochs maximum, gradient clipping at norm 1.0, last 15% of training rows held out chronologically as validation, early stopping on val MSE (patience 5). The initial implementation in this repo did one full-batch gradient step per "epoch" (~20 total updates), leaving the deep models effectively untrained — predictions collapsed to a near-constant mean. The fix in this commit corrects that. After fixing, on MCD 2020 the Transformer reaches correlation 0.22 with realized returns and MAE slightly below the zero-predictor baseline; LSTM reaches correlation 0.11 with similar MAE improvement.
 
 ### 4.2 Conformal wrappers (`src/conformal/`)
 

@@ -393,7 +393,14 @@ def save_intervals(
 def load_all_intervals(results_dir: Path | str = RESULTS_DIR) -> pd.DataFrame:
   """Concatenate every interval CSV under results_dir. Validates schema per file."""
   results_dir = Path(results_dir)
-  files = sorted(results_dir.glob("*.csv"))
+  # Interval CSVs follow the pattern <model>_<wrapper>_<ticker>_<regime>.csv,
+  # i.e. >=4 underscore-separated tokens. The aggregator's metrics_long.csv
+  # (and any other ad-hoc summaries) live in the same directory but have
+  # different schemas — skip them by name.
+  files = [
+    f for f in sorted(results_dir.glob("*.csv"))
+    if len(f.stem.split("_")) >= 4 and f.name != "metrics_long.csv"
+  ]
   if not files:
     raise FileNotFoundError(f"No interval CSVs found in {results_dir}")
 
