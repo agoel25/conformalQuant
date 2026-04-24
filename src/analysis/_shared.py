@@ -103,41 +103,41 @@ class ExperimentSplit:
 def test_window(
   onset: pd.Timestamp,
   end: pd.Timestamp,
-  pad_multiplier: float = 1.0,
+  pad_months: int = 6,
 ) -> tuple[pd.Timestamp, pd.Timestamp]:
-  """Return (test_start, test_end) for a crisis, with pad scaled to crisis length.
-
-  The pad on each side of the crisis equals `pad_multiplier * crisis_length` so
-  crisis / test_window = 1 / (1 + 2*pad_multiplier) is the same for every regime
-  regardless of how long the crisis itself ran. Default 1.0 gives a 1:2 crisis:calm
-  ratio (crisis is 1/3 of the test window).
-  """
-  crisis = end - onset
-  pad = pd.Timedelta(days=int(crisis.days * pad_multiplier))
-  return onset - pad, end + pad
+  """Return (test_start, test_end) for a crisis, with a fixed calendar-month pad on each side."""
+  return (
+    onset - pd.DateOffset(months=pad_months),
+    end   + pd.DateOffset(months=pad_months),
+  )
 
 
 def iterate_experiments(
   train_years: int = 4,
   calib_months: int = 6,
-  pad_multiplier: float = 1.0,
+  test_pad_months: int = 6,
 ) -> Iterator[ExperimentSplit]:
   """Yield an ExperimentSplit for every (ticker, regime) pair in CRISIS_WINDOWS.
 
-  Geometry, anchored at each crisis onset. Pad scales with crisis length so every
-  regime has the same crisis : non-crisis ratio (see `test_window`):
+  Geometry, anchored at each crisis onset:
 
-    test_start, test_end = test_window(onset, end, pad_multiplier)
+    test_start, test_end = test_window(onset, end, test_pad_months)
     calib_end   = test_start
     calib_start = calib_end - calib_months
     train_end   = calib_start
     train_start = train_end - train_years
+
+  Fixed pad (not scaled to crisis length) gives every regime the same ~6mo
+  post-crisis tail for adaptation-speed measurement. Crisis : non-crisis
+  ratios are therefore unequal across regimes (e.g. 2020 is ~16% crisis,
+  2022 is ~50%); metrics are reported per-regime so this doesn't bias
+  cross-model comparisons.
   """
   for regime, cfg in CRISIS_WINDOWS.items():
     onset: pd.Timestamp = cfg["onset"]
     end: pd.Timestamp = cfg["end"]
 
-    test_start, test_end = test_window(onset, end, pad_multiplier)
+    test_start, test_end = test_window(onset, end, test_pad_months)
     calib_end = test_start
     calib_start = calib_end - pd.DateOffset(months=calib_months)
     train_end = calib_start
