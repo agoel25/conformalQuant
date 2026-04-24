@@ -26,14 +26,13 @@ Branch `master`, synced with `origin/master`.
   - `src/analysis/Simple/hist_binning.ipynb`
   - `src/analysis/Simple/tree_based.ipynb`
   - `src/analysis/Complex/lstm.ipynb`
-  - `src/analysis/Complex/tft.ipynb` (uses `TransformerModel` — see §10 TFT caveat)
+  - `src/analysis/Complex/transformer.ipynb` (uses `TransformerModel`; note the notebook is intentionally named "transformer" rather than the proposal's "TFT" — see §10.1)
 - Metric modules on master (added by teammate): `src/metrics/{coverage_metrics,winkler_metrics,interval_metrics,adaptation_metrics,metrics,prediction_cols}.py`
 
 **What does NOT yet exist:**
 - `src/analysis/results.ipynb` — the aggregator that loads all saved intervals and produces the paper's tables + figures. **This is the next major piece of work.**
 - FHS and GARCH baseline model implementations
-- Proper TFT (the proposal names TFT but the code is a basic transformer encoder)
-- Full-grid runs for LSTM and TFT (the full-grid cells exist in both notebooks but are gated by `RUN_FULL_GRID = False` by default — flip and run when ready)
+- Full-grid runs for LSTM and Transformer (the full-grid cells exist in both notebooks but are gated by `RUN_FULL_GRID = False` by default — flip and run when ready)
 
 **Files untracked locally** (intentionally kept out of git by owner):
 - `environment.yml` — conda env spec
@@ -168,7 +167,7 @@ Each interval CSV, one row per out-of-sample trading day:
 | l | float | lower interval bound |
 | u | float | upper interval bound |
 | r | float | realized log return |
-| model | string | e.g. `"lstm"`, `"linear_ar"`, `"hist_binning"`, `"tree_based"`, `"tft"` |
+| model | string | e.g. `"lstm"`, `"linear_ar"`, `"hist_binning"`, `"tree_based"`, `"transformer"` |
 | wrapper | string | `"split"` or `"aci"` |
 | ticker | string | e.g. `"SNAP"` |
 | regime | string | `"2008"`, `"2020"`, or `"2022"` |
@@ -243,7 +242,7 @@ Each per-model notebook has the same structure:
 
 **Default `RUN_FULL_GRID`:**
 - `linear_ar.ipynb`, `hist_binning.ipynb`, `tree_based.ipynb`: `True` (all three fit in seconds)
-- `lstm.ipynb`, `tft.ipynb`: `False` (flip and run when ready — ~9 splits × 2 wrappers × ~minutes of training each)
+- `lstm.ipynb`, `transformer.ipynb`: `False` (flip and run when ready — ~9 splits × 6 wrappers × ~minutes of training each)
 
 Output lands in `results/` (gitignored). Overwrites on re-run (CSVs are keyed by model × wrapper × ticker × regime).
 
@@ -279,7 +278,7 @@ All ran on 2020 × MCD split with α = 0.10, `num_lags=5`, default ACI step 0.01
 | Tree-based | Split | 86.5% | 34.0% | 73.4% | 0.028 |
 | Tree-based | ACI | 88.9% | 48.0% | 91.4% | 0.038 |
 
-Pattern holds across models: Split CP collapses during COVID, ACI partially recovers during crisis and fully recovers post-crisis. **This is the story the proposal is designed to document.** LSTM and TFT not yet benchmarked — run the full grids.
+Pattern holds across models: Split CP collapses during COVID, ACI partially recovers during crisis and fully recovers post-crisis. **This is the story the proposal is designed to document.** LSTM and Transformer not yet benchmarked — run the full grids.
 
 Regime-overview numeric summary (fixed 6-month pad):
 
@@ -313,13 +312,9 @@ All 9 pairs: large drawdowns (≥ 36%) and vol ratios ≥ 1.24 confirm the crisi
 
 ## 10. Open decisions (need human call)
 
-### 10.1 TFT vs transformer encoder
+### 10.1 TFT vs transformer encoder — RESOLVED (keep the encoder)
 
-The folder file is `Complex/tft.ipynb` and the proposal names "TFT" (Temporal Fusion Transformer), but `src/models/transformer_encoder.py` is a basic 1-layer transformer encoder + linear head, not a proper TFT. Two ways forward:
-- **Rename paper section to "Transformer encoder"** (cheap — just a naming change in the writeup)
-- **Implement a proper TFT** using `pytorch-forecasting` or similar (more work; need to decide if it materially changes results)
-
-Decision affects how you describe methods in the paper.
+The proposal originally named "TFT" (Temporal Fusion Transformer), but `src/models/transformer_encoder.py` is a basic 1-layer transformer encoder + linear head, not a proper TFT. **Decision (2026-04-24): keep the transformer encoder, rename paper section to "Transformer".** The notebook is renamed from `tft.ipynb` to `transformer.ipynb` and `MODEL_NAME = "transformer"`.
 
 ### 10.2 FHS and GARCH baselines
 
@@ -345,7 +340,7 @@ The `arch` package is already in `requirements.txt` for future GARCH work.
 
 1. **Write `src/analysis/results.ipynb`** — the aggregator. Consumes `load_all_intervals()` + teammate's `src/metrics/*` modules → paper tables + Cov_low-vs-Cov_high scatter + adaptation-speed robustness paragraph.
 2. **Run LSTM full grid** — flip `RUN_FULL_GRID=True` in `Complex/lstm.ipynb`, run end-to-end (~15 minutes estimated).
-3. **Decide TFT question** (§10.1) then run TFT full grid.
+3. **Run Transformer full grid** (§10.1 resolved in favour of keeping the transformer encoder).
 4. **Simple models full grids** — already default `True`, but re-run after any changes to `_shared.py` / models.
 5. **FHS + GARCH** — decide per §10.2, implement if keeping.
 6. **Write the paper** — once tables/figures are in hand.
@@ -379,7 +374,7 @@ Chronological record of non-obvious choices made during the session, for context
 
 12. **Added `HistogramBinningModel` and `TreeBasedModel`** to fill out the "simple" bucket in the proposal. Kept deliberately simple — quantile-bin lookup and gradient-boosted trees over lag windows. Both interface-compatible with `BaseConformal`'s `model_class` contract.
 
-13. **Skipped a proper TFT for now.** See §10.1. The existing transformer encoder is adequate as a stand-in; decision deferred to writeup time.
+13. **Decided to keep the transformer encoder (not a proper TFT).** See §10.1. Paper section renamed from "TFT" to "Transformer"; notebook renamed from `tft.ipynb` to `transformer.ipynb`; `MODEL_NAME` column in saved CSVs is now `"transformer"`.
 
 ---
 

@@ -31,9 +31,11 @@ class FHS(IntervalPredictor):
     2. Fits a GARCH model directly to these returns.
     3. Extracts standardized residuals (filtered innovations).
     """
-    # In FHS, if returns are serially correlated, we use the residuals 
-    # of the return process.
-    returns = train_data[self.label_col_name].values
+    # In FHS, if returns are serially correlated, we use the residuals
+    # of the return process. Drop NaN/inf (e.g. from pre-IPO rows in the
+    # training window) — arch_model rejects non-finite values.
+    series = train_data[self.label_col_name]
+    returns = series[np.isfinite(series)].values
     
     # Fit GARCH directly to the returns. 
     # We use a Constant mean (or Zero) as the 'model'
@@ -46,10 +48,11 @@ class FHS(IntervalPredictor):
     )
     self.garch_fit = am.fit(disp="off")
     
-    # η_t = ε_t / √h_t 
-    # We use .values to prevent type mismatch errors with numpy.abs()
-    raw_resid = self.garch_fit.resid.values
-    volatility = self.garch_fit.conditional_volatility.values
+    # η_t = ε_t / √h_t
+    # arch returns pandas Series in some versions and numpy ndarray in others.
+    # np.asarray normalizes both shapes so the subsequent arithmetic works.
+    raw_resid = np.asarray(self.garch_fit.resid)
+    volatility = np.asarray(self.garch_fit.conditional_volatility)
     
     # This filtered process yields approximately i.i.d. returns
     self.residuals = raw_resid / volatility

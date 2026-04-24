@@ -13,10 +13,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Type
 
+import numpy as np
 import pandas as pd
 
 from src.conformal.adaptive_conformal import AdaptiveConformal
-from src.conformal.base import BaseConformal
+from src.conformal.base import BaseConformal, IntervalPredictor
 from src.conformal.split_conformal import SplitConformal
 from src.data.data import (
   Cols,
@@ -189,11 +190,11 @@ def ensure_data(
 
 
 def walk_forward(
-  wrapper: BaseConformal,
+  wrapper: IntervalPredictor,
   data: pd.DataFrame,
   test_start: pd.Timestamp,
   test_end: pd.Timestamp,
-  is_adaptive: bool = False,
+  is_adaptive: bool | None = None,
 ) -> pd.DataFrame:
   """Step a fitted+calibrated wrapper one trading day at a time across [test_start, test_end].
 
@@ -202,12 +203,18 @@ def walk_forward(
     2. (point, l, u) = wrapper.predict_with_interval(history)
     3. r = realized log return on day d
     4. record (date, point, l, u, r)
-    5. if is_adaptive: wrapper.adapt(r)   (ACI only; nudges alpha for the next day)
+    5. if wrapper has an adapt() method, call wrapper.adapt(r)
 
-  Skips days where history is shorter than num_lags (early in the test window
-  this should never trigger because train+calib provide ample history, but the
-  guard keeps the function safe to use on truncated data).
+  Adaptation is duck-typed: any wrapper exposing .adapt(real_value) gets driven
+  automatically (ACI, EnbPI's sliding window, AgACI experts, TCP-RM's RM offset).
+  Split-CP and plain TCP have no adapt method and are left alone.
+
+  The is_adaptive kwarg is deprecated (kept for backwards compatibility with
+  existing notebooks) and is ignored — adaptation is now fully determined by
+  the wrapper's interface.
   """
+  del is_adaptive  # kept in signature for call-site compatibility only
+
   label = wrapper.label_col_name
   test_mask = (data.index >= test_start) & (data.index <= test_end)
   test_dates = data.index[test_mask]
@@ -223,11 +230,21 @@ def walk_forward(
 
     rows.append({"date": d, "point": point, "l": lower, "u": upper, "r": realized})
 
-    if is_adaptive:
-      assert isinstance(wrapper, AdaptiveConformal)
-      wrapper.adapt(realized)
+    adapt_fn = getattr(wrapper, "adapt", None)
+    if callable(adapt_fn):
+      adapt_fn(realized)
 
   return pd.DataFrame(rows).set_index("date")
+
+
+_DEEP_MODEL_NAMES = {"LSTMModel", "TransformerEncoderModel"}
+
+
+def _resolve_wrapper_kind(wrapper_kind: str | None, step_size: float | None) -> str:
+  """Back-compat bridge: notebooks that pass step_size=None/float get mapped to split/aci."""
+  if wrapper_kind is not None:
+    return wrapper_kind.lower()
+  return "aci" if step_size is not None else "split"
 
 
 def make_wrapper(
@@ -235,26 +252,110 @@ def make_wrapper(
   label_col: str,
   num_lags: int,
   confidence_level: float = 0.90,
+  wrapper_kind: str | None = None,
   step_size: float | None = None,
-) -> BaseConformal:
-  """Construct SplitConformal (step_size=None) or AdaptiveConformal (step_size>0).
+  *,
+  # EnbPI knobs
+  B: int | None = None,
+  block_size: int = 1,
+  aggregation: str = "mean",
+  window_length: int | None = None,
+  random_state: int = 59,
+  # AgACI knobs
+  gamma_grid: np.ndarray | None = None,
+  eta: float = 1.0,
+  # TCP / TCP-RM knobs
+  tcp_window: int = 252,
+  tcp_calib: int = 60,
+  tcp_refit_every: int = 1,
+  gamma_0: float = 0.01,
+  rm_lambda: float = 1.0,
+  rm_beta: float = 0.6,
+) -> IntervalPredictor:
+  """Construct a conformal wrapper by kind.
 
-  Defaults to confidence_level=0.90 to match the proposal / Metrics.md target,
-  not BaseConformal's 0.95 default.
+  Preferred API: pass wrapper_kind ∈ {"split", "aci", "enbpi", "agaci", "tcp", "tcp_rm"}.
+  Back-compat API: pass step_size=None (→ split) or step_size>0 (→ aci) per the
+  old signature; existing notebooks work unchanged.
+
+  Defaults to confidence_level=0.90 to match the proposal / Metrics.md target.
   """
-  if step_size is None:
+  kind = _resolve_wrapper_kind(wrapper_kind, step_size)
+
+  if kind == "split":
     return SplitConformal(
       model_class=model_class,
       label_col_name=label_col,
       num_lags=num_lags,
       confidence_level=confidence_level,
     )
-  return AdaptiveConformal(
-    model_class=model_class,
-    label_col_name=label_col,
-    num_lags=num_lags,
-    confidence_level=confidence_level,
-    step_size=step_size,
+
+  if kind == "aci":
+    return AdaptiveConformal(
+      model_class=model_class,
+      label_col_name=label_col,
+      num_lags=num_lags,
+      confidence_level=confidence_level,
+      step_size=step_size if step_size is not None else 0.01,
+    )
+
+  if kind == "enbpi":
+    from src.conformal.enbpi_conformal import EnbPIConformal
+    default_B = 10 if model_class.__name__ in _DEEP_MODEL_NAMES else 25
+    return EnbPIConformal(
+      model_class=model_class,
+      label_col_name=label_col,
+      num_lags=num_lags,
+      confidence_level=confidence_level,
+      B=B if B is not None else default_B,
+      block_size=block_size,
+      aggregation=aggregation,
+      window_length=window_length,
+      random_state=random_state,
+    )
+
+  if kind == "agaci":
+    from src.conformal.agaci_conformal import AgACIConformal
+    grid = gamma_grid if gamma_grid is not None else np.geomspace(0.001, 0.1, 12)
+    return AgACIConformal(
+      model_class=model_class,
+      label_col_name=label_col,
+      num_lags=num_lags,
+      confidence_level=confidence_level,
+      gamma_grid=grid,
+      eta=eta,
+    )
+
+  if kind == "tcp":
+    from src.conformal.tcp_conformal import TCPConformal
+    return TCPConformal(
+      model_class=model_class,
+      label_col_name=label_col,
+      num_lags=num_lags,
+      confidence_level=confidence_level,
+      window=tcp_window,
+      calib=tcp_calib,
+      refit_every=tcp_refit_every,
+    )
+
+  if kind == "tcp_rm":
+    from src.conformal.tcp_conformal import TCPRMConformal
+    return TCPRMConformal(
+      model_class=model_class,
+      label_col_name=label_col,
+      num_lags=num_lags,
+      confidence_level=confidence_level,
+      window=tcp_window,
+      calib=tcp_calib,
+      refit_every=tcp_refit_every,
+      gamma_0=gamma_0,
+      rm_lambda=rm_lambda,
+      rm_beta=rm_beta,
+    )
+
+  raise ValueError(
+    f"Unknown wrapper_kind={wrapper_kind!r}. "
+    "Expected one of: 'split', 'aci', 'enbpi', 'agaci', 'tcp', 'tcp_rm'."
   )
 
 
