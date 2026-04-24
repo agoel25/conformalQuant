@@ -13,12 +13,14 @@ class LinearARModel(TimeSeriesModel):
     self.model = LinearRegression()
 
   @override
-  def fit(self, data: pd.DataFrame):
+  def fit(self, data: pd.DataFrame, *args, **kwargs):
     """
     Trains a linear autoregression model.
     
     :param data: Financial Timeseries data as a Dataframe
     """    
+    super().fit(data)
+    
     training_data = data[[self.label_col_name]].copy()
     
     for i in range(1, self.num_lags + 1):

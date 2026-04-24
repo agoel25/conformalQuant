@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import pandas as pd
 import numpy as np
-from typing import Tuple
+from typing import override
 from src.models.base_model import TimeSeriesModel
 from src.data.transform import build_deep_data
 
@@ -59,8 +59,11 @@ class TransformerModel(TimeSeriesModel):
     self.network = Transformer(num_lags, model_dim, num_heads) 
     self.optimizer = torch.optim.Adam(self.network.parameters(), lr=0.001)
     self.criterion = torch.nn.MSELoss()
+
+  @override    
+  def fit(self, data: pd.DataFrame, *args, **kwargs):
+    super().fit(data)
     
-  def fit(self, data: pd.DataFrame):
     X, y = build_deep_data(data, self.label_col_name, self.num_lags)
     
     X_tensor = torch.from_numpy(np.array(X)).reshape(-1, self.num_lags, 1)
@@ -74,6 +77,7 @@ class TransformerModel(TimeSeriesModel):
       loss.backward()
       self.optimizer.step()
 
+  @override
   def predict(self, data: pd.DataFrame) -> float:
     self.network.eval()
     

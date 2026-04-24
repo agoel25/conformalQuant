@@ -55,6 +55,7 @@ class SplitConformal(BaseConformal):
     Returns (prediction, lower_bound, upper_bound) using 
     the static interval calibrated during fit.
     """
+    super().predict_with_interval(data)
     if self.quantile_residuals is None:
         print("Model must be calibrated before prediction. Call fit_and_calibrate first.")
         return (0, 0, 0)

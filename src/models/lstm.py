@@ -5,10 +5,12 @@ import torch.nn as nn
 import torch.optim as optim
 from src.data.transform import build_deep_data
 from src.models.base_model import TimeSeriesModel
+from typing import override
 
 class LSTMNetwork(nn.Module):
   def __init__(self, input_dim, hidden_dim, output_dim):
     super().__init__()
+    
     self.lstm = nn.LSTM(input_dim, hidden_dim, batch_first=True)
     self.final_layer = nn.Linear(hidden_dim, output_dim)
 
@@ -41,17 +43,21 @@ class LSTMModel(TimeSeriesModel):
     
     self.epochs = epochs
     self.learning_rate = learning_rate
+    self.hidden_dim = hidden_dim
     
     self.model = LSTMNetwork(input_dim=1, hidden_dim=hidden_dim, output_dim=1)
     self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
-    self.criterion = loss_fn
+    self.loss_fn = loss_fn
 
-  def fit(self, data: pd.DataFrame):
+  @override
+  def fit(self, data: pd.DataFrame, *args, **kwargs):
     """
     Trains an LSTM model on financial timeseries data
       
     :param data: a pandas dataframe with the timeseries data
     """
+    super().fit(data)
+    
     X, y = build_deep_data(data, self.label_col_name, self.num_lags)
     
     X_tensor = torch.from_numpy(X.astype(np.float32))
@@ -61,10 +67,11 @@ class LSTMModel(TimeSeriesModel):
     for _ in range(self.epochs):
       self.optimizer.zero_grad()
       outputs = self.model(X_tensor)
-      loss = self.criterion(outputs, y_tensor)
+      loss = self.loss_fn(outputs, y_tensor)
       loss.backward()
       self.optimizer.step()
 
+  @override
   def predict(self, data: pd.DataFrame) -> float:
     self.model.eval()
         

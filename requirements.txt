@@ -2,3 +2,4 @@ yfinance
 numpy
 scikit-learn
 torch 
+mapie

@@ -51,4 +51,5 @@ class BaseConformal(ABC):
     
     :param data: the data to predict with
     """
+    assert len(data) >= self.num_lags
     pass

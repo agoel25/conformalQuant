@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 import pandas as pd
+from sklearn.base import RegressorMixin, BaseEstimator
 
-class TimeSeriesModel(ABC):
+class TimeSeriesModel(ABC, BaseEstimator, RegressorMixin):
   def __init__(self, label_col_name: str, num_lags: int = 1):
     """
     Intializes the model
@@ -13,8 +14,9 @@ class TimeSeriesModel(ABC):
     self.label_col_name = label_col_name
 
   @abstractmethod
-  def fit(self, data: pd.DataFrame):
+  def fit(self, data: pd.DataFrame, *args, **kwargs):
     """Train the model on the provided dataframe."""
+    self.is_fitted_ = True
     pass
 
   @abstractmethod
