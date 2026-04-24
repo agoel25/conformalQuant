@@ -65,9 +65,9 @@ class TransformerModel(TimeSeriesModel):
     super().fit(data)
     
     X, y = build_deep_data(data, self.label_col_name, self.num_lags)
-    
-    X_tensor = torch.from_numpy(np.array(X)).reshape(-1, self.num_lags, 1)
-    y_tensor = torch.from_numpy(np.array(y))
+
+    X_tensor = torch.from_numpy(X.astype(np.float32)).reshape(-1, self.num_lags, 1)
+    y_tensor = torch.from_numpy(y.astype(np.float32)).view(-1, 1)
 
     self.network.train()
     for _ in range(self.epochs):
@@ -80,10 +80,10 @@ class TransformerModel(TimeSeriesModel):
   @override
   def predict(self, data: pd.DataFrame) -> float:
     self.network.eval()
-    
-    last_window = data[self.label_col_name][-self.num_lags:]
+
+    last_window = data[self.label_col_name].values[-self.num_lags:].astype(np.float32)
     input_tensor = torch.from_numpy(last_window).reshape(1, self.num_lags, 1)
-    
+
     with torch.no_grad():
-        prediction = self.network(input_tensor).numpy()
-    return float(prediction[0])
+        prediction = self.network(input_tensor)
+    return float(prediction.item())
