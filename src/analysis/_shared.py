@@ -50,17 +50,17 @@ CRISIS_WINDOWS: dict[str, dict] = {
   "2008": {
     "onset": pd.Timestamp("2008-09-15"),
     "end": pd.Timestamp("2009-03-31"),
-    "tickers": TICKERS_2008_STABLE + TICKERS_2008_FINANCE_RESILIENT + TICKERS_2008_CRASH,
+    "tickers": TICKERS_2008_CRASH,
   },
   "2020": {
     "onset": pd.Timestamp("2020-02-20"),
     "end": pd.Timestamp("2020-04-30"),
-    "tickers": TICKERS_COVID_STABLE + TICKERS_COVID_CRASH,
+    "tickers": TICKERS_COVID_CRASH,
   },
   "2022": {
-    "onset": pd.Timestamp("2022-03-16"),
+    "onset": pd.Timestamp("2022-01-03"),
     "end": pd.Timestamp("2022-12-31"),
-    "tickers": TICKERS_2022_STABLE + TICKERS_2022_CRASH,
+    "tickers": TICKERS_2022_CRASH,
   },
 }
 
@@ -100,27 +100,44 @@ class ExperimentSplit:
     return data[(data.index >= self.train_start) & (data.index <= self.test_end)]
 
 
+def test_window(
+  onset: pd.Timestamp,
+  end: pd.Timestamp,
+  pad_multiplier: float = 1.0,
+) -> tuple[pd.Timestamp, pd.Timestamp]:
+  """Return (test_start, test_end) for a crisis, with pad scaled to crisis length.
+
+  The pad on each side of the crisis equals `pad_multiplier * crisis_length` so
+  crisis / test_window = 1 / (1 + 2*pad_multiplier) is the same for every regime
+  regardless of how long the crisis itself ran. Default 1.0 gives a 1:2 crisis:calm
+  ratio (crisis is 1/3 of the test window).
+  """
+  crisis = end - onset
+  pad = pd.Timedelta(days=int(crisis.days * pad_multiplier))
+  return onset - pad, end + pad
+
+
 def iterate_experiments(
   train_years: int = 4,
   calib_months: int = 6,
-  test_pad_months: int = 6,
+  pad_multiplier: float = 1.0,
 ) -> Iterator[ExperimentSplit]:
   """Yield an ExperimentSplit for every (ticker, regime) pair in CRISIS_WINDOWS.
 
-  Geometry, anchored at each crisis onset:
-    test_start  = onset - test_pad_months
+  Geometry, anchored at each crisis onset. Pad scales with crisis length so every
+  regime has the same crisis : non-crisis ratio (see `test_window`):
+
+    test_start, test_end = test_window(onset, end, pad_multiplier)
     calib_end   = test_start
     calib_start = calib_end - calib_months
     train_end   = calib_start
     train_start = train_end - train_years
-    test_end    = crisis_end + test_pad_months
   """
   for regime, cfg in CRISIS_WINDOWS.items():
     onset: pd.Timestamp = cfg["onset"]
     end: pd.Timestamp = cfg["end"]
 
-    test_start = onset - pd.DateOffset(months=test_pad_months)
-    test_end = end + pd.DateOffset(months=test_pad_months)
+    test_start, test_end = test_window(onset, end, pad_multiplier)
     calib_end = test_start
     calib_start = calib_end - pd.DateOffset(months=calib_months)
     train_end = calib_start
@@ -144,11 +161,28 @@ def ensure_data(
   start: datetime.date = datetime.date(2003, 1, 1),
   end: datetime.date | None = None,
 ) -> pd.DataFrame:
-  """Download the full ALL_TICKERS panel covering [start, end) if not cached, then load it."""
+  """Download the full ALL_TICKERS panel covering [start, end) if not cached, then load it.
+
+  If the cache exists but is missing columns for any current ALL_TICKERS entry
+  (e.g. because the basket list was edited since the last download), the stale
+  cache is deleted and re-downloaded. Prevents the "I added a ticker but my
+  notebook kept reading the old CSV" footgun.
+  """
   if end is None:
     end = datetime.date.today()
 
   path = os.path.join(datasets_directory, file_name)
+
+  if os.path.exists(path):
+    cached_cols = set(pd.read_csv(path, nrows=0).columns)
+    expected_cols = {
+      f"{prefix}_{t.value}"
+      for t in ALL_TICKERS
+      for prefix in (Cols.Returns.value, Cols.LogReturns.value)
+    }
+    if expected_cols - cached_cols:
+      os.remove(path)
+
   if not os.path.exists(path):
     download_data(tickers=ALL_TICKERS, start=start, end=end, file_name=file_name)
   return load_data(file_name)
