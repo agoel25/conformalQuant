@@ -36,8 +36,13 @@ class Ticker(StrEnum):
   
   # i just think its funny, pretty much only boomed during pandemic
   Zoom = "ZM"
-  
-  
+
+  # 2022 rate-hike cycle crash candidates — tech/ads collapse
+  Snap = "SNAP"
+  Netflix = "NFLX"
+  Meta = "META"
+
+
 # mostly low-cost, stable, consumer goods
 TICKERS_2008_STABLE = [Ticker.Walmart, Ticker.McDonalds, Ticker.AutoZone]
 
@@ -56,8 +61,8 @@ TICKERS_COVID_CRASH = [Ticker.McDonalds, Ticker.MGMResorts, Ticker.AutoZone]
 # similar blue chip stocks
 TICKERS_2022_STABLE = [Ticker.CocaCola, Ticker.Walmart, Ticker.McDonalds]
 
-# tech stocks took a huge hit
-TICKERS_2022_CRASH = [Ticker.Microsoft, Ticker.Apple, Ticker.Zoom]
+# 2022 rate-hike cycle: tech/ads/social collapse (large drawdowns + clear vol shift)
+TICKERS_2022_CRASH = [Ticker.Snap, Ticker.Netflix, Ticker.Meta]
 
 def download_data(
   tickers: List[Ticker], 
