@@ -219,7 +219,8 @@ def _make_native_specs(refit_every: int) -> list[tuple[str, object]]:
     ("hist_binning", lambda lc, re: HistogramBinningNative(label_col_name=lc, num_lags=NUM_LAGS,
                                                             confidence_level=CONFIDENCE_LEVEL)),
     ("tree_based",   lambda lc, re: QuantileTreeNative(label_col_name=lc, num_lags=NUM_LAGS,
-                                                        confidence_level=CONFIDENCE_LEVEL)),
+                                                        confidence_level=CONFIDENCE_LEVEL,
+                                                        refit_every=re)),
   ]
 
 
@@ -253,7 +254,7 @@ def _run_tcp_paper_sanity(data: pd.DataFrame, ticker_filter: set[str], refit_eve
                                                     garch_window=504, refit_every=re)),
     ("tcp_paper",       lambda lc, re: TCPPaperConformal(label_col_name=lc, num_lags=NUM_LAGS,
                                                           confidence_level=CONFIDENCE_LEVEL,
-                                                          refit_every=re)),
+                                                          refit_every=1)),  # daily refit = paper's design
   ]
   _run_native_grid(data, tcp_paper_specs, ticker_filter, refit_every)
 

@@ -264,15 +264,17 @@ def build_cov_scatter(long: pd.DataFrame, out_dir: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 5. Figure: Width adaptation — overall width vs crisis width
+# 5. Figure: Width dumbbell — non-crisis vs crisis interval width per method
 #
-#   Marks:   dots (per-method mean across cells)
-#   Channels: x = mean interval width (full test window)
-#             y = mean interval width (crisis window only)
-#             color = method category
-#             shape = model
-#   Reference: diagonal y=x (width unchanged during crisis)
-#   Story:   GARCH far above diagonal (widens); CP hugs diagonal (frozen)
+#   Marks:   connected dot pairs (one row per method)
+#   Channels: x-position = interval width
+#             left dot (open) = mean width over full test window
+#             right dot (filled) = mean width during crisis only
+#             line length = absolute expansion during crisis
+#             color = method category (line + both dots)
+#   Sorted:  descending expansion ratio (best expanders at top)
+#   Story:   GARCH/FHS have long gaps (widen 1.4-1.6x); Split-CP dots
+#             overlap perfectly (1.00x, literally frozen)
 # ---------------------------------------------------------------------------
 
 def build_width_adaptation(long: pd.DataFrame, out_dir: Path) -> None:
@@ -280,46 +282,64 @@ def build_width_adaptation(long: pd.DataFrame, out_dir: Path) -> None:
     long.groupby(["category", "model", "wrapper"])[["width", "width_crisis"]]
     .mean().reset_index()
   )
+  agg["ratio"] = agg["width_crisis"] / agg["width"]
   agg["label"] = agg.apply(lambda r: _label(r["model"], r["wrapper"]), axis=1)
+  # sort ascending so highest ratio ends up at top (highest y index)
+  agg = agg.sort_values("ratio", ascending=True).reset_index(drop=True)
 
-  fig, ax = plt.subplots(figsize=(7, 6))
+  n = len(agg)
+  fig, ax = plt.subplots(figsize=(8, max(5, n * 0.52)))
 
-  for _, row in agg.iterrows():
+  for i, row in agg.iterrows():
+    color = CATEGORY_COLORS.get(row["category"], "gray")
+
+    # connecting line — cap style round so it looks clean at the dots
+    ax.plot(
+      [row["width"], row["width_crisis"]], [i, i],
+      color=color, linewidth=2.4, alpha=0.72,
+      solid_capstyle="round", zorder=2,
+    )
+    # left dot: non-crisis width (open circle)
     ax.scatter(
-      row["width"], row["width_crisis"],
-      color=CATEGORY_COLORS.get(row["category"], "gray"),
-      marker=_MODEL_MARKER.get(row["model"], "o"),
-      s=130, edgecolor="black", linewidth=0.6, zorder=3,
+      row["width"], i,
+      facecolors="white", edgecolors=color,
+      linewidths=1.6, s=72, zorder=4,
     )
-    ax.annotate(
-      row["label"], (row["width"], row["width_crisis"]),
-      xytext=(5, 4), textcoords="offset points", fontsize=7, alpha=0.8,
+    # right dot: crisis width (filled)
+    ax.scatter(
+      row["width_crisis"], i,
+      color=color, s=72, zorder=4,
+    )
+    # expansion ratio annotation — right of the filled dot
+    ax.text(
+      row["width_crisis"] + 0.004, i,
+      f"{row['ratio']:.2f}×",
+      va="center", ha="left", fontsize=8,
+      color=color, alpha=0.85,
     )
 
-  top = max(agg["width_crisis"].max(), agg["width"].max()) * 1.15
-  ax.plot([0, top], [0, top], "k--", alpha=0.25, linewidth=1.0, zorder=1)
-
-  ax.set_xlim(0, top); ax.set_ylim(0, top)
-  ax.set_aspect("equal")
-  ax.set_xlabel("Mean interval width — full test window", fontsize=11)
-  ax.set_ylabel("Mean interval width — crisis window only", fontsize=11)
+  ax.set_yticks(range(n))
+  ax.set_yticklabels(agg["label"], fontsize=9)
+  ax.set_xlabel("Mean interval width (log-return units)", fontsize=10)
   ax.set_title(
-    "Interval width: crisis vs. overall\n"
-    "above diagonal = widens during crisis (good); on diagonal = frozen",
+    "Crisis width expansion by method\n"
+    "○ non-crisis width   ● crisis-period width   ratio labelled right",
     fontsize=10,
   )
-  ax.grid(True, alpha=0.15, linewidth=0.4)
+  ax.grid(True, axis="x", alpha=0.18, linewidth=0.5)
+  ax.spines["top"].set_visible(False)
+  ax.spines["right"].set_visible(False)
+
+  # x-axis room for ratio labels
+  x_max = agg["width_crisis"].max() * 1.28
+  ax.set_xlim(0, x_max)
 
   cat_handles = [
-    Line2D([0], [0], marker="o", color="w",
-           markerfacecolor=CATEGORY_COLORS.get(c, "gray"),
-           markeredgecolor="black", markersize=9,
-           label=_CATEGORY_LABEL.get(c, c))
+    Line2D([0], [0], color=CATEGORY_COLORS.get(c, "gray"),
+           linewidth=2.2, label=_CATEGORY_LABEL.get(c, c))
     for c in _CATEGORY_ORDER if c in agg["category"].values
   ]
-  ax.legend(handles=cat_handles + [
-    Line2D([0], [0], color="black", linestyle="--", alpha=0.4, label="y = x  (no expansion)")
-  ], fontsize=9, framealpha=0.9)
+  ax.legend(handles=cat_handles, loc="lower right", fontsize=9, framealpha=0.9)
 
   fig.tight_layout()
   _save(fig, out_dir / "width_adaptation")
