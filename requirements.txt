@@ -1,6 +1,7 @@
-yfinance
 numpy
+pandas
 scikit-learn
-torch 
-mapie
+torch
 arch
+yfinance
+matplotlib

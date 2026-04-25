@@ -67,6 +67,26 @@ CRISIS_WINDOWS: dict[str, dict] = {
 
 REQUIRED_COLUMNS = {"date", "point", "l", "u", "r", "model", "wrapper", "ticker", "regime"}
 
+# Four-way categorisation used in the paper's main analysis.
+#
+#   baseline      — industry-standard volatility models (FHS, GARCH). All other categories
+#                   are compared against these.
+#   simple_native — simple models that produce intervals natively from data structure
+#                   (histogram-binning quantiles, quantile gradient-boosted trees). No CP.
+#   simple_cp     — simple point predictors wrapped with CP (only LinearAR here).
+#   complex_cp    — neural point predictors wrapped with CP (LSTM, Transformer).
+#
+# Notebooks live under src/analysis/Baselines/, Simple_Native/, Simple_CP/, Complex_CP/.
+MODEL_CATEGORIES: dict[str, str] = {
+  "fhs": "baseline",
+  "garch_roll": "baseline",
+  "hist_binning": "simple_native",
+  "tree_based": "simple_native",
+  "linear_ar": "simple_cp",
+  "lstm": "complex_cp",
+  "transformer": "complex_cp",
+}
+
 
 @dataclass(frozen=True)
 class ExperimentSplit:

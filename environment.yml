@@ -1,0 +1,16 @@
+name: conformalquant
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - numpy
+  - pandas
+  - scikit-learn
+  - matplotlib
+  - pip
+  - pip:
+      - torch
+      - arch
+      - yfinance

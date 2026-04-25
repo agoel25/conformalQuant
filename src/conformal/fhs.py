@@ -1,93 +1,85 @@
+"""Filtered Historical Simulation using the ``arch`` library.
+
+  1. Fit a GARCH(1,1) (constant mean, normal innovations) on the
+     pre-test training+calibration period (returns × 100, percent units).
+  2. Compute standardized residuals η_t = ε_t / σ_t and store the
+     (1−α/2) empirical quantile of |η_t|.
+  3. At each test step, hand the *fitted* GARCH parameters to
+     ``arch_model.fix()`` over the running history to obtain a fresh
+     one-step-ahead σ, then form the interval as μ ± q_|η| · σ_{t+1}.
+
+The percent-unit convention (×100, then ÷100 at the boundary) avoids
+arch's ``rescale=True`` mode silently changing scales between
+``fit()`` and ``fix()`` calls.
+"""
+from __future__ import annotations
+
+import warnings
+
 import numpy as np
 import pandas as pd
-from typing import Tuple
 from arch import arch_model
+from typing import Tuple, override
+
 from src.conformal.base import IntervalPredictor
 
+
+_SCALE = 100.0
+
+
 class FHS(IntervalPredictor):
-  """
-  A 'Pure' Filtered Historical Simulation implementation.
-  Skips a predictive mean model and uses raw log returns as residuals,
-  standardized by GARCH volatility.
-  """
-    
+
   def __init__(
-      self,
-      label_col_name: str,
-      confidence_level: float = 0.95,
-      vol_model: str = 'Garch',
-      p: int = 1,
-      q: int = 1
+    self,
+    label_col_name: str,
+    confidence_level: float = 0.95,
+    history_cap: int = 504,
   ):
-    super().__init__(label_col_name, 0, confidence_level)
-    self.vol_model_type = vol_model
-    self.p = p
-    self.q = q
-    self.garch_fit = None
+    super().__init__(label_col_name, num_lags=0, confidence_level=confidence_level)
+    self.history_cap = history_cap
+    self._params: pd.Series | None = None
+    self._mu_frac: float = 0.0
+    self._q_eta: float | None = None  # (1-α/2) empirical quantile of |std residuals|
 
-  def fit_and_calibrate(self, train_data: pd.DataFrame, calib_data: pd.DataFrame | None = None):
-    """
-    1. Takes raw log returns from the training data.
-    2. Fits a GARCH model directly to these returns.
-    3. Extracts standardized residuals (filtered innovations).
-    """
-    # In FHS, if returns are serially correlated, we use the residuals
-    # of the return process. Drop NaN/inf (e.g. from pre-IPO rows in the
-    # training window) — arch_model rejects non-finite values.
+  @override
+  def fit_and_calibrate(
+    self,
+    train_data: pd.DataFrame,
+    calib_data: pd.DataFrame | None = None,
+  ) -> None:
     series = train_data[self.label_col_name]
-    returns = series[np.isfinite(series)].values
-    
-    # Fit GARCH directly to the returns. 
-    # We use a Constant mean (or Zero) as the 'model'
-    am = arch_model(
-      returns, 
-      vol=self.vol_model_type, 
-      p=self.p, 
-      q=self.q, 
-      mean='Constant'
-    )
-    self.garch_fit = am.fit(disp="off")
-    
-    # η_t = ε_t / √h_t
-    # arch returns pandas Series in some versions and numpy ndarray in others.
-    # np.asarray normalizes both shapes so the subsequent arithmetic works.
-    raw_resid = np.asarray(self.garch_fit.resid)
-    volatility = np.asarray(self.garch_fit.conditional_volatility)
-    
-    # This filtered process yields approximately i.i.d. returns
-    self.residuals = raw_resid / volatility
-    
-    if self.residuals is None:
-      return
-    
-    # Calculate the conformal quantile for the desired confidence level
-    # We use the absolute standardized residuals to form a symmetric interval.
-    abs_std_residuals = np.abs(self.residuals)
-    self.quantile_residuals = FHS.conformal_quantile(abs_std_residuals, self.alpha)
+    if calib_data is not None:
+      series = pd.concat([series, calib_data[self.label_col_name]])
+    series_pct = series[np.isfinite(series)].astype(np.float64) * _SCALE
+    if len(series_pct) < 100:
+      raise RuntimeError(f"FHS: need ≥ 100 rows for fit, got {len(series_pct)}")
 
+    with warnings.catch_warnings():
+      warnings.simplefilter("ignore")
+      am = arch_model(series_pct, mean="Constant", vol="Garch", p=1, q=1,
+                      dist="normal", rescale=False)
+      res = am.fit(disp="off", show_warning=False)
+
+    ab = float(res.params.get("alpha[1]", 0.0)) + float(res.params.get("beta[1]", 0.0))
+    if not np.isfinite(ab) or ab >= 0.999:
+      raise RuntimeError(f"FHS: non-stationary GARCH fit (α+β={ab:.3f})")
+
+    self._params = res.params.copy()
+    self._mu_frac = float(res.params.get("mu", 0.0)) / _SCALE
+    eta = np.asarray(res.resid) / np.asarray(res.conditional_volatility)
+    self._q_eta = float(np.quantile(np.abs(eta), 1 - self.alpha / 2))
+
+  @override
   def predict_with_interval(self, data: pd.DataFrame) -> Tuple[float, float, float]:
-    """
-    Calculates the prediction interval by scaling the historical standardized 
-    quantile by the current forecast of volatility
-    
-    Instead of doing the sampling described in the paper, it directly uses the 
-    required quantile from the standardized past returns. This is equivalent to
-    sampling + finding a range of forecasts + finding quantile of forecasts
-    """
-    assert self.garch_fit is not None, "Model must be calibrated before prediction."
-    
-    # 1. The 'Point Forecast' here is the constant mean estimated by GARCH.
-    point_pred = self.garch_fit.params['mu']
-    
-    # 2. Forecast the conditional volatility for the next period (√h_{T+1}).
-    # This allows the interval to reflect current market conditions.
-    forecast = self.garch_fit.forecast(horizon=1, reindex=False)
-    forecasted_vol = np.sqrt(forecast.variance.values[-1, -1])
-    
-    # 3. Scale the standardized quantile by current volatility
-    margin = self.quantile_residuals * forecasted_vol
-    
-    lower_bound = point_pred - margin
-    upper_bound = point_pred + margin
-    
-    return float(point_pred), float(lower_bound), float(upper_bound)
+    assert self._params is not None and self._q_eta is not None
+    history_pct = data[self.label_col_name].dropna().iloc[-self.history_cap:] * _SCALE
+    with warnings.catch_warnings():
+      warnings.simplefilter("ignore")
+      am = arch_model(history_pct, mean="Constant", vol="Garch", p=1, q=1,
+                      dist="normal", rescale=False)
+      fit_rolling = am.fix(self._params)
+      forecast = fit_rolling.forecast(horizon=1, reindex=False)
+
+    sigma_next = float(np.sqrt(forecast.variance.values[-1, 0])) / _SCALE
+    margin = self._q_eta * sigma_next
+    return self._mu_frac, self._mu_frac - margin, self._mu_frac + margin

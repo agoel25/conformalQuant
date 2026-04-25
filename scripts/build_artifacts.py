@@ -44,15 +44,35 @@ WRAPPER_COLORS = {
 }
 MODEL_MARKERS = {
   "linear_ar": "o", "hist_binning": "s", "tree_based": "^",
-  "lstm": "D", "transformer": "P", "fhs": "X", "garch": "*",
+  "lstm": "D", "transformer": "P", "fhs": "X", "garch_roll": "H",
 }
 WRAPPER_NAME = {
   "split": "Split", "aci": "ACI", "enbpi": "EnbPI", "agaci": "AgACI",
-  "tcp": "TCP", "tcp_rm": "TCP-RM", "native": "Native",
+  "native": "Native",
 }
 MODEL_NAME = {
-  "linear_ar": "LinAR", "hist_binning": "HistBin", "tree_based": "Trees",
-  "lstm": "LSTM", "transformer": "Tx", "fhs": "FHS", "garch": "GARCH",
+  "linear_ar": "LinAR",
+  "hist_binning": "HistBin",
+  "tree_based": "QTree",
+  "lstm": "LSTM",
+  "transformer": "Tx",
+  "fhs": "FHS",
+  "garch_roll": "GARCH(rolling)",
+}
+
+# Four-way categorisation matching src/analysis/_shared.MODEL_CATEGORIES:
+#   baseline      — FHS, GARCH (rolling): the comparison targets
+#   simple_native — HistBin and quantile-tree native intervals (no CP)
+#   simple_cp     — LinearAR wrapped with CP
+#   complex_cp    — LSTM / Transformer wrapped with CP
+MODEL_CATEGORY: dict[str, str] = {
+  "fhs": "baseline",
+  "garch_roll": "baseline",
+  "hist_binning": "simple_native",
+  "tree_based": "simple_native",
+  "linear_ar": "simple_cp",
+  "lstm": "complex_cp",
+  "transformer": "complex_cp",
 }
 
 
@@ -123,7 +143,14 @@ def build_metrics_long(raw: pd.DataFrame, out_path: Path) -> pd.DataFrame:
     m = _metrics_for_slice(g, regime)
     if m is None:
       continue
-    rows.append({"model": model, "wrapper": wrapper, "ticker": ticker, "regime": regime, **m})
+    rows.append({
+      "model": model,
+      "wrapper": wrapper,
+      "category": MODEL_CATEGORY.get(model, "unknown"),
+      "ticker": ticker,
+      "regime": regime,
+      **m,
+    })
   long = pd.DataFrame(rows)
   long.to_csv(out_path, index=False)
   print(f"wrote {len(long)} rows -> {out_path}")
@@ -188,7 +215,7 @@ def build_rolling_coverage(raw: pd.DataFrame, out_dir: Path) -> None:
     onset, end = CRISIS_WINDOWS[regime]["onset"], CRISIS_WINDOWS[regime]["end"]
     sl = raw[
       (raw["regime"] == regime) & (raw["ticker"] == ticker)
-      & raw["model"].isin(["lstm", "transformer", "fhs", "garch"])
+      & raw["model"].isin(["lstm", "transformer", "fhs", "garch", "garch_roll"])
     ]
     for (model, wrapper), g in sl.groupby(["model", "wrapper"]):
       g = g.sort_values("date")
