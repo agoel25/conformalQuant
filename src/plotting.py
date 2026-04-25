@@ -11,7 +11,11 @@ The flagship figure is ``plot_interval_timeline`` — one figure per
   * dashed verts : crisis onset and end
   * title        : "<model × wrapper>  —  <ticker> (<regime>)   cov=… W=…"
 
-The figure is saved to disk and also returned so the caller can `display()`
+All metric computations delegate to ``src.metrics.Metrics`` (the spec in
+``src/metrics/Metrics.md``), so plotting numbers and table numbers are
+guaranteed to match.
+
+The figure is saved to disk and also returned so the caller can ``display()``
 it inside a notebook.
 """
 from __future__ import annotations
@@ -22,6 +26,9 @@ from typing import Iterable
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+from src.metrics.metrics import Metrics
+from src.metrics.prediction_cols import PredictionCols
 
 
 # Per-category colour palette (band + line colour for each method category)
@@ -48,6 +55,21 @@ def _interval_color(model: str, category: str | None = None) -> str:
   return METHOD_COLORS.get(model, CATEGORY_COLORS.get(category or "baseline", "C0"))
 
 
+def _to_metrics_frame(intervals: pd.DataFrame) -> pd.DataFrame:
+  """Internal helper: ensure the DataFrame has a DatetimeIndex and the column
+  names that ``src.metrics.Metrics`` expects (``log_returns``, ``lower_bound``,
+  ``upper_bound``)."""
+  df = intervals.copy()
+  if df.index.name != "date" and "date" in df.columns:
+    df = df.set_index(pd.to_datetime(df["date"]))
+  df = df.sort_index()
+  return df.rename(columns={
+    "r": str(PredictionCols.LOG_RETURNS),
+    "l": str(PredictionCols.LOWER_BOUND),
+    "u": str(PredictionCols.UPPER_BOUND),
+  })
+
+
 def plot_interval_timeline(
   intervals: pd.DataFrame,
   *,
@@ -65,26 +87,20 @@ def plot_interval_timeline(
   """Render the per-cell timeline figure and (optionally) save to disk.
 
   ``intervals`` must contain columns: date (in index or column), point, l, u, r.
+  Coverage / Winkler / width in the title come from ``src.metrics.Metrics``.
   """
-  df = intervals.copy()
-  if df.index.name != "date" and "date" in df.columns:
-    df = df.set_index(pd.to_datetime(df["date"]))
-  df = df.sort_index()
-
-  realized = df["r"].astype(float).values
-  lo = df["l"].astype(float).values
-  up = df["u"].astype(float).values
+  df = _to_metrics_frame(intervals)
+  realized = df[str(PredictionCols.LOG_RETURNS)].astype(float).values
+  lo = df[str(PredictionCols.LOWER_BOUND)].astype(float).values
+  up = df[str(PredictionCols.UPPER_BOUND)].astype(float).values
   pt = df["point"].astype(float).values
   in_iv = (realized >= lo) & (realized <= up)
-
-  cov = float(in_iv.mean())
-  width = float(np.mean(up - lo))
   miss = ~in_iv
-  # Winkler with nominal alpha
-  width_t = up - lo
-  pen_lo = (2.0 / alpha_nominal) * np.maximum(lo - realized, 0.0)
-  pen_hi = (2.0 / alpha_nominal) * np.maximum(realized - up, 0.0)
-  winkler = float(np.mean(width_t + pen_lo + pen_hi))
+
+  m = Metrics(df, alpha=alpha_nominal)
+  cov = float(m.get_coverage_metrics().get_marginal_coverage())
+  winkler = float(m.get_winkler_metrics().get_mean_scores()[0])
+  width = float(m.get_interval_metrics().get_mean_widths()[0])
 
   color = _interval_color(model, category)
 
@@ -131,19 +147,53 @@ def plot_interval_timeline(
 
 
 def compute_cell_metrics(intervals: pd.DataFrame, alpha_nominal: float = 0.10) -> dict:
-  """Convenience: per-cell coverage / Winkler / width."""
-  realized = intervals["r"].astype(float).values
-  lo = intervals["l"].astype(float).values
-  up = intervals["u"].astype(float).values
-  in_iv = (realized >= lo) & (realized <= up)
-  width_t = up - lo
-  pen_lo = (2.0 / alpha_nominal) * np.maximum(lo - realized, 0.0)
-  pen_hi = (2.0 / alpha_nominal) * np.maximum(realized - up, 0.0)
+  """Convenience: per-cell coverage / Winkler / width — delegates to
+  ``src.metrics.Metrics`` so plotting and analysis tables share one source.
+  """
+  df = _to_metrics_frame(intervals)
+  m = Metrics(df, alpha=alpha_nominal)
   return {
-    "cov": float(in_iv.mean()),
-    "winkler": float(np.mean(width_t + pen_lo + pen_hi)),
-    "width": float(np.mean(width_t)),
-    "n": int(len(intervals)),
+    "cov": float(m.get_coverage_metrics().get_marginal_coverage()),
+    "winkler": float(m.get_winkler_metrics().get_mean_scores()[0]),
+    "width": float(m.get_interval_metrics().get_mean_widths()[0]),
+    "n": int(len(df)),
+  }
+
+
+def compute_cell_metrics_full(
+  intervals: pd.DataFrame,
+  *,
+  crisis_start: pd.Timestamp,
+  crisis_end: pd.Timestamp,
+  alpha_nominal: float = 0.10,
+) -> dict:
+  """Per-cell metrics matching ``src/metrics/Metrics.md`` spec:
+  marginal + high/low-vol-stratified coverage, Winkler and width
+  (overall / high-vol / low-vol / in-crisis), plus adaptation speed.
+  """
+  df = _to_metrics_frame(intervals)
+  m = Metrics(df, alpha=alpha_nominal)
+
+  cov_high, cov_low, cov_gap = m.get_coverage_metrics().get_high_low_vol_coverage()
+  w_overall, w_high, w_low = m.get_winkler_metrics().get_mean_scores()
+  width_overall, width_high, width_low = m.get_interval_metrics().get_mean_widths()
+  cov_crisis = float(m.get_coverage_metrics().get_period_coverage(crisis_start, crisis_end))
+  win_crisis = float(m.get_winkler_metrics().get_period_score(crisis_start, crisis_end))
+  width_crisis = float(m.get_interval_metrics().get_period_width(crisis_start, crisis_end))
+  t_rec, max_dd, recovered = m.get_adaptation_metrics().compute_adaptation_speed(
+    crisis_start, crisis_end, threshold=0.85, persistence=5, window=20,
+  )
+
+  return {
+    "n": int(len(df)),
+    "cov": float(m.get_coverage_metrics().get_marginal_coverage()),
+    "cov_high": float(cov_high), "cov_low": float(cov_low), "cov_gap": float(cov_gap),
+    "winkler": float(w_overall), "w_high": float(w_high), "w_low": float(w_low),
+    "width": float(width_overall), "width_high": float(width_high), "width_low": float(width_low),
+    "cov_crisis": cov_crisis, "winkler_crisis": win_crisis, "width_crisis": width_crisis,
+    "t_recovery": int(t_rec),
+    "max_drawdown_cov": float(max_dd) if max_dd is not None and not np.isnan(max_dd) else float("nan"),
+    "recovered": bool(recovered),
   }
 
 
@@ -165,6 +215,8 @@ def render_cell_grid(
 
   out_dir = Path(out_dir)
   rows = []
+  raw = raw.copy()
+  raw["regime"] = raw["regime"].astype(str)  # CSV often parses regime as int
   for (model, wrapper, ticker, regime), grp in raw[
     raw["model"].isin(models)
   ].groupby(["model", "wrapper", "ticker", "regime"]):

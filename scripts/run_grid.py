@@ -78,9 +78,9 @@ COMPLEX_CP_MODELS: list[tuple[str, type]] = [
   ("transformer", TransformerModel),
 ]
 SIMPLE_CP_WRAPPERS = ["split", "aci", "agaci"]
-# TCP and TCP-RM are excluded from the main grid: the paper-faithful TCP comparison
-# lives in its own --only tcp_paper run.  EnbPI also excluded (slowest, marginal benefit).
 COMPLEX_CP_WRAPPERS = ["split", "aci", "agaci"]
+# TCP / TCP-RM excluded from main grid (see TCP_Paper sanity for why);
+# EnbPI also dropped to keep CPU runtime tractable.
 
 
 # ---------------------------------------------------------------------------
@@ -127,7 +127,6 @@ def _run_cp_grid(
         confidence_level=CONFIDENCE_LEVEL,
         wrapper_kind=kind,
         step_size=ACI_STEP_SIZE,
-        tcp_refit_every=_refit,
       )
       wrapper.fit_and_calibrate(train_df, calib_df)
       intervals = walk_forward(wrapper, full_df, split.test_start, split.test_end)

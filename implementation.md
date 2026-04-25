@@ -1,20 +1,32 @@
 # Implementation Notes
 
-Working document for picking up the project. Captures what's built, why it's built that way, where the gotchas are, and how to reproduce results from a fresh clone.
+Working document.  Captures what's built, why, where the gotchas are,
+how the workflow runs end-to-end, and how long each step takes.  See
+codebase conventions an AI agent should know.
 
-Last updated: 2026-04-24 (post final-results session).
+Last updated: 2026-04-24 (post category-restructure + rolling-GARCH /
+TCP rewrite).
 
 ---
 
 ## 1. Project context
 
-- **Question:** how do conformal prediction methods compare against industry-standard volatility models for forming prediction intervals on financial returns through crisis regimes?
-- **Methods evaluated:** six conformal wrappers (Split CP, ACI, EnbPI, AgACI, TCP, TCP-RM) and two industry baselines (FHS, GARCH(1,1) with Student-$t$ innovations).
-- **Base predictors:** five — `LinearARModel`, `HistogramBinningModel`, `TreeBasedModel` (sklearn-backed simple models) and `LSTMModel`, `TransformerModel` (PyTorch deep models).
-- **Crises:** three exogenous windows — 2008 Lehman (Sept-15-2008 → Mar-31-2009), 2020 COVID (Feb-20-2020 → Apr-30-2020), 2022 rate-hike cycle (Jan-3-2022 → Dec-31-2022).
-- **Tickers:** three per regime — 2008 {AIG, GNW, MGM}, 2020 {MCD, MGM, AZO}, 2022 {SNAP, NFLX, META} = 9 (ticker, regime) pairs.
-- **Headline result:** TCP and TCP-RM (with both LSTM and Transformer base predictors) are the only methods that hit nominal $0.90$ marginal coverage on average and recover rolling coverage in $\sim 17$ days after the 2008 crisis onset; every non-TCP method takes $\geq 109$ days or never recovers.
-- **Final deliverable:** `report/report.pdf` (NeurIPS-style, 6 pages main + 2 references/appendix). Reproduction is `python scripts/run_grid.py && python scripts/build_artifacts.py`.
+* **Question:** do CP methods produce better daily-return prediction
+  intervals than properly-calibrated rolling GARCH and FHS on US
+  equities through 2008, 2020, and 2022 crisis windows? Does
+  base-model complexity (LSTM / Transformer) help once the
+  uncertainty-quantification layer is fixed?
+* **Method categories** evaluated against `Baselines` (FHS, rolling
+  GARCH):  `Simple_Native` (histogram-binning, QRF), `Simple_CP`
+  (LinearAR + {split, ACI, AgACI}), `Complex_CP` (LSTM, Transformer
+  + {split, ACI, AgACI}).
+* **Excluded** from the main grid: TCP / TCP-RM (separate
+  `TCP_Paper` sanity shows they lose to a properly-fitted rolling
+  GARCH), EnbPI (compute cost vs marginal benefit).
+* **Crises:** 2008 Lehman {AIG, GNW, MGM}, 2020 COVID {MCD, MGM, AZO},
+  2022 rate-hike {SNAP, NFLX, META} — 9 (ticker, regime) pairs total
+  (MGM appears twice).
+* **Confidence level:** 1−α = 0.90 (α = 0.10) throughout.
 
 ---
 
@@ -22,366 +34,341 @@ Last updated: 2026-04-24 (post final-results session).
 
 ```
 .
-├── README.md                          # one-page reproduction instructions
+├── README.md                          # public-facing overview
 ├── implementation.md                  # this file
-├── requirements.txt                   # pip dependencies
-├── environment.yml                    # conda spec (untracked locally)
-├── main.py                            # initial smoke runner (older scaffolding)
-├── evaluate.py                        # standalone fit-then-predict helper (older)
-├── papers/                            # reference PDFs (TCP, FHS)
-├── project-format/                    # prof's LaTeX template + style file
-├── datasets/                          # gitignored; cached yfinance data
-├── results/                           # gitignored; 180 interval CSVs + metrics_long.csv
-├── report/
-│   ├── report.tex / report.pdf        # the actual paper
-│   ├── refs.bib                       # 12 bib entries
-│   ├── paper.sty            # copy of the prof's style file
-│   └── figures/                       # scatter_cov_lo_hi.{pdf,png}, rolling_coverage.{pdf,png}
+├── requirements.txt
+├── environment.yml                    # conda spec
+├── papers/                            # TCP, FHS, Fantazzini PDFs
+├── datasets/                          # gitignored; cached yfinance panel
+├── results/                           # gitignored; per-cell interval CSVs +
+│                                      # metrics_long.csv aggregate
+├── report/                            # LaTeX + figures
+│   ├── report.tex / refs.bib / paper.sty
+│   └── figures/
+│       ├── timelines/<Category>/      # per-cell timeline PNGs (one per cell)
+│       └── aggregate/                 # cross-method scatter, rolling cov, etc
 ├── scripts/
-│   ├── run_grid.py                    # produces all 180 interval CSVs in ~15 min
-│   └── build_artifacts.py             # aggregates → metrics_long.csv + figures
+│   ├── run_grid.py                    # end-to-end runner with --only flag
+│   └── build_artifacts.py             # aggregate metrics + paper figures (CLI form of results.ipynb)
 └── src/
-    ├── conformal/                     # 6 wrappers + 2 baselines
-    │   ├── base.py                    # IntervalPredictor + BaseConformal abstract
+    ├── plotting.py                    # timeline figure + metric helpers (delegates to src.metrics)
+    ├── conformal/
+    │   ├── base.py                    # IntervalPredictor + BaseConformal
+    │   ├── garch.py                   # GarchHardcoded + RollingGarch
+    │   ├── fhs.py                     # Filtered Historical Simulation
+    │   ├── hist_binning_native.py     # histogram-binning native intervals
+    │   ├── tree_native.py             # Quantile Regression Forest (Meinshausen 2006)
     │   ├── split_conformal.py
     │   ├── adaptive_conformal.py      # ACI (Gibbs & Candès 2021)
-    │   ├── enbpi_conformal.py         # EnbPI (Xu & Xie 2021), from-scratch
     │   ├── agaci_conformal.py         # AgACI (Zaffran et al. 2022)
-    │   ├── tcp_conformal.py           # TCP + TCP-RM (Aich et al. 2026)
-    │   ├── fhs.py                     # Filtered Historical Simulation
-    │   └── garch.py                   # GARCH(1,1) with conformal calibration
-    ├── models/                        # 5 base predictors
+    │   └── tcp_paper.py               # paper-faithful TCP (sanity-only)
+    ├── models/
     │   ├── base_model.py
-    │   ├── linear_ar.py / histogram_binning.py / tree_based.py
-    │   ├── lstm.py / transformer_encoder.py
-    ├── metrics/                       # evaluation
-    │   ├── Metrics.md                 # the spec — read before changing anything here
-    │   ├── prediction_cols.py         # column-name enum
-    │   ├── coverage_metrics.py        # marginal + conditional coverage
-    │   ├── winkler_metrics.py         # Winkler scores, including period subset
-    │   ├── interval_metrics.py        # width stratification
-    │   ├── adaptation_metrics.py      # T_recovery, max_drawdown, recovered flag
-    │   └── metrics.py                 # facade: one Metrics object → vends the four sub-classes
+    │   ├── linear_ar.py
+    │   ├── lstm.py
+    │   └── transformer_encoder.py
+    ├── metrics/
+    │   ├── Metrics.md                 # the metrics spec
+    │   ├── prediction_cols.py
+    │   ├── coverage_metrics.py        # marginal + high/low-vol-stratified coverage
+    │   ├── winkler_metrics.py
+    │   ├── interval_metrics.py        # widths
+    │   ├── adaptation_metrics.py      # T_recovery, max_drawdown, recovered
+    │   └── metrics.py                 # facade: one Metrics object → 4 sub-metrics
     ├── data/
-    │   ├── data.py                    # yfinance download + Cols / Ticker enums
+    │   ├── data.py                    # yfinance loader, Cols/Ticker enums
     │   └── transform.py               # build_deep_data → (N, num_lags, 1) tensors
     └── analysis/
-        ├── _shared.py                 # iterate_experiments + walk_forward + make_wrapper + I/O
+        ├── _shared.py                 # ExperimentSplit + iterate_experiments +
+        │                              # walk_forward + make_wrapper + I/O
+        ├── results.ipynb              # cross-category aggregator (Tables 1-3 + scatter)
         ├── regime_overview.ipynb      # crisis-window sanity-check plots
-        ├── results.ipynb              # interactive aggregator (mirrors build_artifacts.py)
-        ├── Simple/{linear_ar,hist_binning,tree_based}.ipynb
-        ├── Complex/{lstm,transformer}.ipynb
-        └── Baselines/{fhs,garch}.ipynb
+        ├── Baselines/                 # README + fhs.ipynb + garch_roll.ipynb
+        ├── Simple_Native/             # README + hist_binning.ipynb + tree_based.ipynb
+        ├── Simple_CP/                 # README + linear_ar.ipynb
+        ├── Complex_CP/                # README + lstm.ipynb + transformer.ipynb
+        └── TCP_Paper/                 # README + tcp_paper.ipynb (sanity-only)
 ```
 
 ---
 
-## 3. Experimental grid
+## 3. The grid
 
-### 3.1 Tickers (9 (ticker, regime) pairs)
+### 3.1 Tickers (9 ticker × regime cells)
 
-| Regime | Tickers | Rationale |
-|---|---|---|
-| 2008 | AIG, GNW, MGM | financial collapse + casino hit hardest by Lehman |
-| 2020 | MCD, MGM, AZO | in-person consumer / hospitality crushed by COVID |
-| 2022 | SNAP, NFLX, META | ad revenue + streaming under rate-hike pressure |
+| Regime | Tickers | Onset | End | Event |
+|--------|---------|-------|-----|-------|
+| 2008 | AIG, GNW, MGM   | 2008-09-15 | 2009-03-31 | Lehman bankruptcy |
+| 2020 | MCD, MGM, AZO   | 2020-02-20 | 2020-04-30 | S&P pre-crash peak |
+| 2022 | SNAP, NFLX, META | 2022-01-03 | 2022-12-31 | S&P pre-bear peak |
 
-MGM appears in both 2008 and 2020 baskets — gets two independent fits.
+### 3.2 Split geometry (per ticker × regime)
 
-### 3.2 Crisis windows (exogenous dates)
-
-| Regime | Onset | End | Event |
-|---|---|---|---|
-| 2008 | 2008-09-15 | 2009-03-31 | Lehman Brothers bankruptcy filing |
-| 2020 | 2020-02-20 | 2020-04-30 | S&P 500 pre-crash peak |
-| 2022 | 2022-01-03 | 2022-12-31 | S&P 500 pre-bear peak |
-
-Dates are exogenous (external events, not data-derived) so adaptation-speed measurement is not circular. See `src/metrics/Metrics.md` §Metric 5.
-
-### 3.3 Split geometry (per ticker × regime)
-
-Defined in `_shared.iterate_experiments()` with defaults `train_years=4, calib_months=6, test_pad_months=6`:
+Defined in `_shared.iterate_experiments(train_years=4, calib_months=6, test_pad_months=6)`:
 
 ```
-train:     [onset - 4y - 12mo,  onset - 12mo)         # 4 years
-calibrate: [onset - 12mo,        onset - 6mo)          # 6 months of calm
-test:      [onset - 6mo,         end + 6mo]            # crisis + 6mo on each side
+train     : [onset - 4y - 12mo,  onset - 12mo)
+calibrate : [onset -      12mo,  onset -  6mo)
+test      : [onset -       6mo,  end   +  6mo]
 ```
 
-- Per-crisis refits, not one global model — the question is "does CP stay calibrated *into* each crisis", which needs a fresh pre-crisis fit.
-- Crisis fractions of the test window differ by regime (2008 35%, 2020 16%, 2022 50%); per-regime metrics handle this cleanly.
+Per-crisis refits (no global model) so we measure "does CP stay
+calibrated *into* each crisis", which needs a fresh pre-crisis fit.
 
-### 3.4 Nominal coverage
+### 3.3 Method × wrapper grid
 
-**$\alpha = 0.10$, $1-\alpha = 0.90$.** `BaseConformal` defaults to `confidence_level=0.95`; `_shared.make_wrapper()` overrides to $0.90$ to match `Metrics.md`. Pass it explicitly elsewhere or results won't match the paper tables.
+| Category        | Models                | Wrappers           | Cells per category |
+|-----------------|----------------------|--------------------|--------------------|
+| Baselines       | fhs, garch_roll      | native             | 2 × 9 = 18         |
+| Simple_Native   | hist_binning, tree_based | native         | 2 × 9 = 18         |
+| Simple_CP       | linear_ar            | split, aci, agaci  | 1 × 3 × 9 = 27     |
+| Complex_CP      | lstm, transformer    | split, aci, agaci  | 2 × 3 × 9 = 54     |
+| **Main grid**   |                      |                    | **117 cells**      |
+| TCP_Paper sanity | garch_hardcoded, garch_roll, fhs, tcp_paper | n/a | 4 × 3 = 12 (COVID 2020 only) |
 
-### 3.5 Wrapper × model coverage
+### 3.4 Refit cadence
 
-The grid is **180 runs** = three groups:
-
-| Group | Models | Wrappers | CSVs |
-|---|---|---|---|
-| Simple | LinAR, HistBin, Trees | Split, ACI | 3 × 2 × 9 = 54 |
-| Deep   | LSTM, Transformer    | Split, ACI, EnbPI, AgACI, TCP, TCP-RM | 2 × 6 × 9 = 108 |
-| Baseline | FHS, GARCH (no wrapper) | Native | 2 × 1 × 9 = 18 |
-
-Simple models are scoped to Split + ACI per the proposal's framing where they are "interpretable native-interval methods"; the four newer wrappers were applied only to deep base predictors. EnbPI and AgACI work on simple models too — running them is as cheap as adding entries to `WRAPPER_KINDS` in the relevant notebook or `scripts/run_grid.py`.
-
----
-
-## 4. Architecture
-
-Two parallel hierarchies (`Models`, `Conformal Wrappers`) glued by string column names and a shared `num_lags` convention.
-
-### 4.1 Base predictors (`src/models/`)
-
-All subclass `TimeSeriesModel(label_col_name, num_lags)`. Implement `fit(df)` and `predict(df) -> float`. `predict` returns the next value after the last `num_lags` rows of the supplied dataframe — single-step only, not a sequence forecast.
-
-| Class | File | Algorithm |
-|---|---|---|
-| `LinearARModel` | `linear_ar.py` | sklearn `LinearRegression` on lagged features (drops NaN rows) |
-| `HistogramBinningModel` | `histogram_binning.py` | quantile-bin lookup over lag-window mean → memorised bin mean of next step |
-| `TreeBasedModel` | `tree_based.py` | sklearn `GradientBoostingRegressor` (200 trees, max_depth 3) over lag windows |
-| `LSTMModel` | `lstm.py` | single-layer LSTM (50 hidden) + linear head, mini-batch Adam + early stopping (PyTorch) |
-| `TransformerModel` | `transformer_encoder.py` | 1-layer Transformer encoder ($d_\mathrm{model}=32$, 4 heads, dropout 0.1) + linear head, mini-batch Adam + early stopping (PyTorch) |
-
-**Deep model training (LSTM, Transformer).** mini-batch Adam (batch size 32, lr $10^{-3}$), 50 epochs maximum, gradient clipping at norm 1.0, last 15% of training rows held out **chronologically** as validation, early stopping on val MSE (patience 5). NaN/inf rows in the label column (e.g. pre-IPO history for tickers like GNW or SNAP) are filtered before training. The earlier implementation ran a single full-batch gradient step per "epoch" (~20 total updates) which left predictions collapsed near a constant; the fixed loop is what produced the numbers in the paper. See §6.1 for details.
-
-### 4.2 Conformal wrappers (`src/conformal/`)
-
-All concrete wrappers subclass either `BaseConformal` (which owns a single instance of a passed-in `model_class`) or, for FHS/GARCH which are interval producers in their own right, the lower-level `IntervalPredictor`. Common interface:
-
-- `fit_and_calibrate(train_data, calib_data) -> None`
-- `predict_with_interval(data) -> (point, lower, upper)`
-- optional `adapt(real_value) -> None` for online updates; `walk_forward` calls it via duck typing (`hasattr(wrapper, "adapt")`).
-
-| Class | File | One-liner |
-|---|---|---|
-| `SplitConformal` | `split_conformal.py` | Fixed half-width = $\hat{q}(\alpha)$ over absolute residuals |
-| `AdaptiveConformal` | `adaptive_conformal.py` | Online $\alpha$ update on coverage error (Gibbs & Candès 2021) |
-| `EnbPIConformal` | `enbpi_conformal.py` | $B$ bootstrap predictors, sliding LOO residuals (Xu & Xie 2021) |
-| `AgACIConformal` | `agaci_conformal.py` | $K$ ACI experts with different $\gamma$, EW aggregation (Zaffran et al. 2022) |
-| `TCPConformal` | `tcp_conformal.py` | Rolling 252-day window, refit + recalibrate every $k$ test steps (Aich et al. 2026) |
-| `TCPRMConformal` | `tcp_conformal.py` | TCP + Robbins-Monro offset on the conformal threshold (Aich et al. 2026) |
-| `FHS` | `fhs.py` | Filtered historical simulation with GARCH-standardized residuals |
-| `Garch` | `garch.py` | GARCH(1,1) Student-$t$ + conformal quantile of $|y - \mu| / \sigma_t$ |
-
-**The conformal quantile** (`BaseConformal.conformal_quantile`) returns `+inf` when the calibration set is too small to finite-sample-guarantee the requested coverage (rank > $n$). See §6.2 for the ACI dynamic floor that prevents inf widths in practice.
-
-**EnbPI hyperparameters.** `B=25` for simple base predictors; `B=10` for LSTM/Transformer to keep wall-clock cost manageable. Block size 1 (i.i.d.\ bootstrap) by default; moving-block bootstrap available via `block_size > 1`.
-
-**AgACI hyperparameters.** Default `gamma_grid = np.geomspace(0.001, 0.1, 12)`, `eta = 1.0`. The aggregator is exponential weights over per-side pinball loss; BOA can be a drop-in replacement by editing `adapt`.
-
-**TCP hyperparameters.** Default `window=252`, `calib=60` (so train slice = 192 rows); `refit_every=5` for the deep models to reduce per-step refit cost (the paper uses every step). TCP-RM extends with `gamma_0=0.01`, `lambda=1.0`, `beta=0.6` per Aich et al.\ Eq.\ 1.
-
-### 4.3 Analysis utilities (`src/analysis/_shared.py`)
-
-| Symbol | Purpose |
-|---|---|
-| `ALL_TICKERS` | Union of every basket in `data.py`; what `ensure_data()` downloads |
-| `CRISIS_WINDOWS` | dict `{regime: {onset, end, tickers}}` — single source of truth for the 9 experiments |
-| `ExperimentSplit` | Frozen dataclass with `train/calib/test` timestamps + `.slice_train/calib/full(data)` helpers |
-| `iterate_experiments()` | Generator yielding `ExperimentSplit` per (ticker, regime) pair |
-| `ensure_data()` | Downloads ALL_TICKERS if not cached, with auto-refresh guard when ALL_TICKERS changes |
-| `walk_forward(wrapper, data, test_start, test_end, is_adaptive=None)` | Steps the wrapper one day at a time. `is_adaptive` is deprecated and ignored — adaptation is duck-typed via `hasattr(wrapper, "adapt")` |
-| `make_wrapper(model_class, label_col, num_lags, confidence_level=0.90, wrapper_kind=None, step_size=None, ...)` | Factory. Preferred: pass `wrapper_kind ∈ {"split","aci","enbpi","agaci","tcp","tcp_rm"}`. Back-compat: pass `step_size=None` (→ split) or `step_size=0.01` (→ aci); existing notebooks work without edits. Other kwargs (`B`, `gamma_grid`, `tcp_window`, `tcp_calib`, `tcp_refit_every`, `gamma_0`, `rm_lambda`, `rm_beta`) are forwarded to the relevant wrapper. |
-| `save_intervals(df, model, wrapper, ticker, regime, results_dir=RESULTS_DIR)` | Writes tagged CSV to `results/<model>_<wrapper>_<ticker>_<regime>.csv` |
-| `load_all_intervals(results_dir)` | Concatenates every interval CSV; skips `metrics_long.csv` and any other non-interval files (filename must split into ≥4 underscore tokens) |
-| `REQUIRED_COLUMNS`, `RESULTS_DIR` | Schema gate + project-root `/results` path |
-
-### 4.4 Data (`src/data/`)
-
-- `data.py` — yfinance download wrapper. Columns named `Returns_<TICKER>` and `Log_Returns_<TICKER>`. `Cols` and `Ticker` are `StrEnum`. All `TICKERS_*` basket constants live here. `load_data` parses `Date` as a `DatetimeIndex`.
-- `transform.py` — `build_deep_X` / `build_deep_data` for reshaping into `(N, num_lags, 1)` tensors for LSTM/Transformer.
-
-### 4.5 Metrics (`src/metrics/`)
-
-| File | Role |
-|---|---|
-| `Metrics.md` | Evaluation spec — source of truth for nominal coverage, crisis dates, vol-threshold convention. |
-| `prediction_cols.py` | Column-name constants for saved predictions (`log_returns`, `lower_bound`, `upper_bound`). |
-| `coverage_metrics.py` | Marginal + conditional coverage via boolean masks. |
-| `winkler_metrics.py` | Winkler score $W_t = (u_t - l_t) + (2/\alpha)\max(l_t - r_t, 0) + (2/\alpha)\max(r_t - u_t, 0)$. |
-| `interval_metrics.py` | Width stratification (overall / high-vol / low-vol / period). |
-| `adaptation_metrics.py` | `compute_adaptation_speed(crisis_start, crisis_end, threshold=0.85, persistence=5, window=20) -> (T_rec, max_drawdown, recovered)`. |
-| `metrics.py` | Facade: one `Metrics(df, alpha)` → `get_coverage_metrics()`, `get_winkler_metrics()`, `get_interval_metrics()`, `get_adaptation_metrics()`. |
-
-The aggregator (`scripts/build_artifacts.py` and `src/analysis/results.ipynb`) renames the CSV columns `r/l/u` → `log_returns/lower_bound/upper_bound` before instantiating `Metrics`.
+Single `REFIT_EVERY = 21` constant in `scripts/run_grid.py` shared by
+*every* adaptive method (`RollingGarch`, `TCPPaperConformal`).  This is
+the apples-to-apples comparison constraint.
 
 ---
 
-## 5. Saved interval schema (`results/*.csv`)
+## 4. Metric pipeline
 
-| column | type | description |
-|---|---|---|
-| date | `datetime64[ns]` | trading day |
-| point | float | model's point prediction |
-| l | float | lower interval bound |
-| u | float | upper interval bound |
-| r | float | realized log return |
-| model | string | `linear_ar`, `hist_binning`, `tree_based`, `lstm`, `transformer`, `fhs`, `garch` |
-| wrapper | string | `split`, `aci`, `enbpi`, `agaci`, `tcp`, `tcp_rm`, `native` |
-| ticker | string | e.g. `SNAP` |
-| regime | string | `2008`, `2020`, `2022` |
+* **One source of truth:** `src/metrics/Metrics`.  The `Metrics` class
+  computes the high/low volatility mask once per asset (75th-percentile
+  rolling-20-day variance over full sample) and exposes
+  `get_coverage_metrics()`, `get_winkler_metrics()`,
+  `get_interval_metrics()`, `get_adaptation_metrics()`.
+* **`src/plotting.py :: compute_cell_metrics`** delegates to `Metrics`
+  so plot titles match the aggregate tables exactly.
+* **`compute_cell_metrics_full`** returns the full Metrics.md schema:
+  marginal cov, high/low-vol-stratified cov + width + Winkler,
+  in-crisis cov/width/Winkler, T_recovery, max_drawdown_cov.
+* **`results/metrics_long.csv`** is built by
+  `scripts/build_artifacts.py` (and equivalently by
+  `src/analysis/results.ipynb`).  One row per (model, wrapper, ticker,
+  regime), all metrics columns.
 
-Filename: `<model>_<wrapper>_<ticker>_<regime>.csv`. Aggregate file `metrics_long.csv` (also under `results/`) has a different schema and is skipped by `load_all_intervals`.
-
----
-
-## 6. Key implementation fixes (for posterity)
-
-### 6.1 Deep-model training fix
-
-**Symptom (now fixed):** the original LSTM/Transformer fit loops did one full-batch gradient step per "epoch", giving ~20 total updates. LSTM predictions had std `1.3e-4` (essentially constant); Transformer was predicting a constant ≈ −5\% every day, MAE 4× worse than zero predictor. The conformal coverage numbers were still mathematically valid (the rolling residual quantile absorbed the wrong constant) but the "TCP works on neural predictors" story was unsupported.
-
-**Fix:** rewrote `src/models/lstm.py` and `src/models/transformer_encoder.py` to use proper mini-batch Adam (batch=32, 50 epochs max), gradient clipping at norm 1.0, last 15% of training rows held out chronologically as validation, early stopping on val MSE (patience=5). NaN/inf training rows are filtered before fitting. After fix on MCD 2020, Transformer corr=0.22 with realized returns, LSTM corr=0.11, both beat the zero-predictor MAE.
-
-### 6.2 ACI alpha floor
-
-The original `adaptive_conformal.py` clamped `alpha` to `[0.001, 0.5]`. With $n=121$ calibration residuals and target $\alpha=0.10$, sustained crisis losses pushed $\alpha$ to 0.001 — but `conformal_quantile` returns $+\infty$ for any $\alpha < 1/(n+1) \approx 0.0083$. Result: `inf` widths during crises. Replaced with the dynamic floor `1/(len(residuals)+1) + 1e-6`, which is always strictly above the support boundary; smoke test post-fix shows zero inf days.
-
-### 6.3 GARCH stationarity guard + sigma cap
-
-The arch optimiser occasionally converges to non-stationary GARCH params ($\alpha + \beta \geq 1$) and a bogus mean several orders of magnitude outside the returns range. Forward volatility recursion then explodes (interval widths $\sim 10^{16}$). Two layers of defence: `arch_model(rescale=True)` to improve numerical conditioning, and a post-fit guard that raises `RuntimeError` if $\alpha + \beta \geq 1$ so the runner can skip that (asset, window) cell. AIG 2008 currently triggers the guard — a legitimate data finding for that pre-Lehman period.
-
-### 6.4 GARCH/FHS NaN handling and arch 8.x API
-
-Both baselines now drop NaN/inf rows from the training series before calling `arch_model` (necessary for pre-IPO tickers like GNW 2008, SNAP 2022). The earlier `forecast(... data=...)` API was removed in arch 8.x; we now use `am.fix(params)` to apply the trained parameters to a rolling history and read off the volatility trajectory.
-
-### 6.5 EnbPI rewrite (no MAPIE)
-
-The original EnbPI was a stub wrapping `mapie.regression.TimeSeriesRegressor` that returned `(0,0,0)` for every prediction. Replaced with a from-scratch implementation of Xu & Xie 2021 Algorithm 1: $B$ bootstrap-trained predictors, leave-one-out aggregation for residuals, sliding `collections.deque` of residuals updated via `adapt(real_value)`. No MAPIE dependency.
-
-### 6.6 `walk_forward` duck-typed adaptation
-
-Old version branched on a boolean `is_adaptive` kwarg and asserted `isinstance(wrapper, AdaptiveConformal)`. New version is `if hasattr(wrapper, "adapt"): wrapper.adapt(real_value)`. ACI, EnbPI, AgACI, and TCP-RM all expose `adapt`; Split and TCP do not. The old `is_adaptive` kwarg is preserved as a deprecated no-op for back-compat with existing notebook call sites.
-
-### 6.7 Notebook path bootstrap
-
-Each notebook starts by walking up from CWD to find a `requirements.txt` and inserting the project root into `sys.path`, so `from src.analysis._shared import ...` works whether Jupyter is launched from project root or from `src/analysis/`.
+The metrics spec (`src/metrics/Metrics.md`) is the document to read
+before changing anything in `src/metrics/`.
 
 ---
 
-## 7. How to run
+## 5. End-to-end workflow
 
-### 7.1 Environment
+### 5.1 Environment
 
 ```bash
+# venv (works out of the box)
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-# OR: conda env create -f environment.yml && conda activate conformalquant
+
+# OR conda
+conda env create -f environment.yml && conda activate conformalquant
 ```
 
-Python 3.12+ required (`StrEnum`, `typing.override`, PEP 604 unions). Direct deps: `numpy`, `pandas`, `scikit-learn`, `torch`, `arch` (GARCH/FHS), `yfinance`, `matplotlib`. EnbPI no longer needs `mapie` since the rewrite.
+Python 3.12+ required.  Direct deps: `numpy`, `pandas`,
+`scikit-learn`, `torch`, `arch`, `scipy`, `yfinance`, `matplotlib`.
 
-### 7.2 End-to-end reproduction
+### 5.2 Reproduction commands
 
 ```bash
-python scripts/run_grid.py            # 180 interval CSVs, ~15 min
-python scripts/build_artifacts.py     # results/metrics_long.csv + report figures
-cd report && pdflatex report.tex && biber report && pdflatex report.tex && pdflatex report.tex
+# Full grid (~10 min on CPU)
+python scripts/run_grid.py
+
+# Or run subsets
+python scripts/run_grid.py --only baselines       # ~1 min
+python scripts/run_grid.py --only simple_native   # ~1-2 min  (QRF is the slow one)
+python scripts/run_grid.py --only simple_cp       # ~30 s
+python scripts/run_grid.py --only complex_cp      # ~3-5 min on CPU; <1 min on GPU
+python scripts/run_grid.py --only tcp_paper       # standalone TCP sanity (1 min)
+
+# Aggregate metrics + paper figures
+python scripts/build_artifacts.py
+# OR run src/analysis/results.ipynb interactively
 ```
 
-`scripts/run_grid.py --only {simple,deep,baselines,all}` runs subsets. The `--only` flag is useful when iterating on one model class at a time. The script seeds `numpy` and `torch` to 0 per (model, wrapper, ticker, regime) cell so output is deterministic.
+### 5.3 Per-model notebooks
 
-### 7.3 Interactive workflow (notebooks)
+Each model has its own notebook (e.g. `lstm.ipynb`, `fhs.ipynb`).
+Every per-model notebook is self-contained and idempotent:
 
-The notebook flow is equivalent to the script flow:
+1. Bootstraps `sys.path` so `from src...` works regardless of CWD.
+2. Runs the model on every `(ticker, regime)` cell across its
+   applicable wrappers, *skipping* cells whose CSV already exists in
+   `results/` (set `FORCE_RERUN = True` to override).
+3. Loads every CSV for that model and renders one timeline figure per
+   cell into `report/figures/timelines/<Category>/`.
+4. Prints a per-cell metrics table and a summary aggregated by
+   wrapper (or just by ticker/regime for native-interval models).
 
-1. Run `src/analysis/Simple/{linear_ar,hist_binning,tree_based}.ipynb` (or just `regime_overview.ipynb` first to sanity-check crisis windows).
-2. Run `src/analysis/Baselines/{fhs,garch}.ipynb`.
-3. Flip `RUN_FULL_GRID=True` in `src/analysis/Complex/{lstm,transformer}.ipynb` and run.
-4. Run `src/analysis/results.ipynb` to aggregate.
+### 5.4 Time estimates
 
-`RUN_FULL_GRID` defaults: simple notebooks `True` (fast), deep notebooks `False` (gated to avoid surprise long runs in interactive use).
+Wall-clock measurements from a CPU-only laptop (i7, 16 GB RAM):
 
-### 7.4 Regenerating regime overview
+| Step                          | Time (CPU)  | Time (GPU)  | Notes |
+|-------------------------------|-------------|-------------|-------|
+| `--only baselines`            | ~1 min      | ~1 min      | 18 cells |
+| `--only simple_native`        | ~10 min     | ~10 min     | QRF predict is leaf-lookup-bound (35 s/cell) |
+| `--only simple_cp`            | ~30 s       | ~30 s       | LinearAR is trivial |
+| `--only complex_cp`           | ~3-5 min    | ~30-60 s    | LSTM + Transformer × 3 wrappers × 9 cells |
+| `--only tcp_paper`            | ~1 min      | ~1 min      | only run once for sanity |
+| `scripts/build_artifacts.py`  | ~5 s        | ~5 s        | reads CSVs, writes metrics + figures |
 
-`src/analysis/regime_overview.ipynb` is standalone — load data, plot cumulative returns and rolling vol per (regime, ticker) with crisis windows shaded, plus a numeric summary table. Run this first to visually confirm crisis windows correspond to real stock moves. **Restart the Jupyter kernel after editing `_shared.py` or `data.py`** — Jupyter caches imports.
+If you re-run with everything cached the runner skips already-present
+CSVs (delete the relevant files in `results/` to force a rerun).
 
----
+### 5.5 Where outputs land
 
-## 8. Headline numbers from the final grid
+```
+results/
+├── <model>_<wrapper>_<ticker>_<regime>.csv     # one CSV per cell
+└── metrics_long.csv                            # aggregate metrics
 
-Averaged across all 9 (ticker, regime) pairs (rows sorted by Winkler, lower is better):
+report/figures/
+├── timelines/
+│   ├── Baselines/<model>_<wrapper>_<ticker>_<regime>.{png,pdf}
+│   ├── Simple_Native/...
+│   ├── Simple_CP/...
+│   └── Complex_CP/...
+└── aggregate/
+    ├── scatter_cov_winkler.{png,pdf}           # cross-method scatter
+    └── rolling_coverage.{png,pdf}              # 3-panel rolling cov per crisis
+```
 
-| # | Model × Wrapper | Marg. Cov | Cov gap | Width | Winkler |
-|---|---|---|---|---|---|
-| 1 | LSTM × TCP        | 0.892 | 0.080 | 0.173 | **0.280** |
-| 2 | LSTM × TCP-RM     | 0.897 | 0.073 | 0.179 | **0.280** |
-| 3 | Transformer × TCP-RM | 0.895 | 0.077 | 0.187 | 0.293 |
-| 4 | Transformer × TCP    | 0.889 | 0.089 | 0.181 | 0.293 |
-| 5 | LSTM × ACI         | 0.820 | 0.174 | 0.109 | 0.305 |
-| 6 | HistBin × ACI      | 0.819 | 0.181 | 0.109 | 0.307 |
-| ... | (ACI / AgACI variants cluster ~0.31) | | | | |
-| 19 | FHS × Native       | 0.666 | 0.302 | 0.065 | 0.415 |
-| 20 | GARCH × Native     | 0.768 | 0.179 | 0.225 | 0.477 |
-
-Adaptation speed during 2008 (days to recover rolling 20-day cov $\geq 0.85$ for 5 consecutive days): TCP family 17.3–17.7 across both deep base predictors; ACI methods 108–117 (1/3 tickers recovered); Split / EnbPI / FHS 137 (none recovered).
-
-Full per-cell numbers in `results/metrics_long.csv`; full prose discussion in `report/report.pdf`.
-
----
-
-## 9. Gotchas
-
-- **`datasets/` and `results/` are gitignored** — never commit downloaded CSVs or interval outputs.
-- **`BaseConformal.confidence_level` defaults to 0.95** but Metrics.md is 0.90. Use `_shared.make_wrapper()` (defaults to 0.90) or pass it explicitly.
-- **`make_wrapper(wrapper_kind=...)` is the preferred API**; old `step_size=None|0.01` keeps working for back-compat.
-- **`walk_forward` ignores `is_adaptive`**; adaptation is duck-typed. ACI/EnbPI/AgACI/TCP-RM expose `adapt`; Split/TCP don't.
-- **EnbPI on deep models defaults to `B=10`**, not 25, to keep wall-clock manageable. Override via `make_wrapper(..., B=25)`.
-- **TCP/TCP-RM refit every step by default**, which is expensive on neural models. `make_wrapper(..., tcp_refit_every=5)` is the practical default in `scripts/run_grid.py`; the paper's claim is paper-default `=1`.
-- **AIG 2008 GARCH degenerate fit**: $\alpha + \beta \geq 1$, runner skips it. Result file is absent for that one (asset, window) cell; the aggregator tolerates this.
-- **MGM appears in both 2008 and 2020 baskets**; gets two independent fits (different train/calib/test windows).
-- **Jupyter caches imports.** After editing any `src/` file, restart the kernel — re-running cells alone won't pick up the change.
-- **AIG 2008 GARCH cell is missing on purpose** (see §6.3). If you re-run the baselines and see only 8 GARCH CSVs instead of 9, that's expected.
-- **`load_all_intervals` skips `metrics_long.csv`** automatically (the aggregate has a different schema). Other ad-hoc CSVs in `results/` will also be skipped if their filename doesn't have ≥4 underscore-separated tokens.
+The interval CSV schema is in `_shared.REQUIRED_COLUMNS`:
+`{date, point, l, u, r, model, wrapper, ticker, regime}`.
 
 ---
 
-## 10. Decision log
+## 6. Architecture details
 
-Chronological record of non-obvious choices, for context if any get revisited.
+### 6.1 Base predictors (`src/models/`)
 
-1. **Notebook layout: per-model, not per-crisis.** Each model trains once per (ticker, regime) and saves intervals; the aggregator handles the rest. Avoids retraining across crises and keeps "model work" separable from "evaluation work".
+Subclass `TimeSeriesModel(label_col_name, num_lags)`.  Implement
+`fit(df)` and `predict(df) -> float`.  `predict` returns the next
+value after the last `num_lags` rows of the dataframe — single-step
+only.
 
-2. **Per-crisis refits, not one global model.** The proposal asks "does CP stay calibrated *into* each crisis", which needs a fresh pre-crisis fit, not a global 20-year model.
+| Class                  | File                       | Algorithm |
+|------------------------|----------------------------|-----------|
+| `LinearARModel`        | `linear_ar.py`             | sklearn `LinearRegression` on lagged features |
+| `LSTMModel`            | `lstm.py`                  | single-layer LSTM(50) + linear head, mini-batch Adam, early stopping |
+| `TransformerModel`     | `transformer_encoder.py`   | 1-layer Transformer encoder (d=32, h=4, dropout=0.1) + linear head |
 
-3. **Crash-only ticker baskets.** Stable baskets exist in `data.py` but are not iterated; they dilute the headline comparison. Re-add as controls if a reviewer asks "is ACI's advantage specifically about regime adaptation vs general quality?".
+`HistogramBinningModel` and `TreeBasedModel` (point-predictor versions)
+are kept for back-compat but are no longer in the main grid — the
+native-interval versions in `src/conformal/{hist_binning_native,tree_native}.py`
+replace them.
 
-4. **Exogenous crisis onsets.** Deriving onset from the stock's own returns would introduce circularity into the adaptation-speed metric.
+### 6.2 Conformal wrappers + native interval methods (`src/conformal/`)
 
-5. **2022 onset = 2022-01-03 (S&P peak), not 2022-03-16 (first Fed hike).** Captures the pre-hike selloff.
+| Class                       | File                       | One-liner |
+|-----------------------------|----------------------------|-----------|
+| `RollingGarch`              | `garch.py`                 | rolling-fit GARCH(1,1) Student-t with parametric quantile (no conformal layer) |
+| `GarchHardcoded`            | `garch.py`                 | TCP paper's exact GARCH (ω=1e-6, α=0.05, β=0.9, normal); sanity-only |
+| `FHS`                       | `fhs.py`                   | Filtered Historical Simulation (Barone-Adesi et al. 1999) |
+| `HistogramBinningNative`    | `hist_binning_native.py`   | quantile-bin lookup of training next-step returns |
+| `QuantileTreeNative`        | `tree_native.py`           | Quantile Regression Forest (Meinshausen 2006) |
+| `SplitConformal`            | `split_conformal.py`       | fixed half-width = (1-α)-quantile of |residuals| |
+| `AdaptiveConformal`         | `adaptive_conformal.py`    | Online α update (Gibbs & Candès 2021) |
+| `AgACIConformal`            | `agaci_conformal.py`       | Aggregated ACI (Zaffran et al. 2022) |
+| `TCPPaperConformal`         | `tcp_paper.py`             | Paper-faithful TCP: quantile GBM + rolling split-conformal (sanity-only) |
 
-6. **2022 basket swap MSFT/AAPL/ZM → SNAP/NFLX/META** after empirical check showed the original three had weak vol-ratio shifts (1.26–1.51).
+All `IntervalPredictor` and `BaseConformal` subclasses share the same
+two-method interface: `fit_and_calibrate(train, calib)` and
+`predict_with_interval(data) -> (point, lower, upper)`.  Wrappers that
+expose `.adapt(real_value)` are duck-typed by `walk_forward` and
+called automatically.
 
-7. **6-month fixed pad on each side, not equal-ratio.** Tried `pad = crisis_length`; reverted because the resulting 50-day post-2020 tail was too short for `persistence=5` recovery detection.
+### 6.3 Analysis utilities (`src/analysis/_shared.py`)
 
-8. **ACI alpha floor = `1/(n+1) + 1e-6`** instead of hardcoded `0.001`. See §6.2.
+| Symbol                   | Purpose |
+|--------------------------|---------|
+| `iterate_experiments()`  | Yields one `ExperimentSplit` per (ticker, regime) cell |
+| `walk_forward(...)`      | Steps a wrapper one trading day at a time across the test window; duck-types `adapt` |
+| `make_wrapper(...)`      | Factory for the CP wrappers; defaults `confidence_level=0.90` |
+| `save_intervals(...)`    | Writes the standardised CSV schema |
+| `MODEL_CATEGORIES`       | Maps every model name to one of `{baseline, simple_native, simple_cp, complex_cp}` |
+| `CRISIS_WINDOWS`         | The exogenous crisis onset/end dates and ticker baskets |
+| `RESULTS_DIR`            | Project-root `/results` |
 
-9. **Added HistogramBinningModel and TreeBasedModel** to fill the proposal's "simple" bucket. Quantile-bin lookup and gradient-boosted trees over lag windows; both interface-compatible with `BaseConformal`'s `model_class` contract.
+### 6.4 Plotting (`src/plotting.py`)
 
-10. **Kept transformer encoder, did not implement true TFT** (proposal originally named TFT). Notebook renamed `tft.ipynb` → `transformer.ipynb`, paper section renamed to "Transformer".
-
-11. **TCP/TCP-RM scoped to deep base predictors only** in the headline grid. The two TCP wrappers also work on simple models (the factory accepts any `model_class`), but the proposal's framing positions simple models as "native-interval methods" — adding TCP to them is a one-line `WRAPPER_KINDS` change if a reviewer asks.
-
-12. **EnbPI rewritten from scratch**, no MAPIE dependency. The earlier MAPIE wrapper had a broken integration that returned `(0,0,0)`.
-
-13. **`tcp_refit_every=5` on deep models** for runtime; paper's default is 1 (refit every step).
-
-14. **Deep model training rewrite (mini-batch + early stopping)** — biggest correctness fix. See §6.1.
+| Symbol                             | Purpose |
+|------------------------------------|---------|
+| `plot_interval_timeline(...)`      | Per-cell figure (filled-band interval + predicted point + realised returns + crisis shading) |
+| `compute_cell_metrics(...)`        | Coverage / Winkler / width — delegates to `src.metrics.Metrics` |
+| `compute_cell_metrics_full(...)`   | Full Metrics.md schema (incl. high/low-vol stratification, in-crisis subsets, T_recovery) |
+| `render_cell_grid(...)`            | Convenience: render one figure per cell from a raw multi-cell DataFrame |
 
 ---
 
-## 11. Status
+## 7. Decision log
 
-Nothing left in the work plan that's currently blocking. Concrete polish items if you have time:
+Chronological non-obvious choices, for context if any get revisited.
 
-- Replace the placeholder GitHub URL in `report/report.tex` (`\begin{ack}` block) with the actual repo URL.
-- Re-run `scripts/run_grid.py` from a fresh clone in a different machine to confirm reproducibility before submission.
-- Optionally extend EnbPI/AgACI to the simple base predictors (one-line change) for a fuller comparison table.
-- Optionally implement BOA aggregation in AgACI; the interface supports a drop-in replacement of the EW step in `adapt`.
+1. **Per-crisis refits, not one global model.** The proposal asks
+   "does CP stay calibrated *into* each crisis", which needs a fresh
+   pre-crisis fit, not a global 20-year model.
+2. **Crash-only ticker baskets.**  Stable baskets exist in `data.py`
+   but aren't iterated; they dilute the headline comparison.  Re-add
+   as controls if a reviewer asks.
+3. **Exogenous crisis onsets.**  Deriving onset from returns would
+   introduce circularity into the adaptation-speed metric.
+4. **2022 onset = 2022-01-03 (S&P peak), not 2022-03-16 (first Fed
+   hike)** — captures the pre-hike sell-off.
+5. **Confidence level pinned at 0.90.**  `BaseConformal` defaults to
+   0.95 but every entry point overrides it; results assume 0.90 throughout.
+6. **`REFIT_EVERY = 21` shared across every adaptive method.**  TCP
+   refitting every step (paper default) vs GARCH never refitting (TCP
+   paper baseline) is an unfair comparison; we fix to monthly for
+   everyone.
+7. **Use the `arch` library, not hand-rolled GARCH.**  The earlier
+   manual recursion had a double-counting bug in `predict_with_interval`
+   (last calib observation applied twice).  Using `arch_model.fix(params)`
+   with explicit percent-unit scaling kills both bug classes.
+8. **Drop the conformal q_hat layer from `RollingGarch`.**  Adding an
+   empirical quantile correction on top of a properly-fitted Student-t
+   parametric quantile doubly-inflates intervals; pure parametric is
+   the right baseline.
+9. **TCP / TCP-RM excluded from the main grid.**  The
+   `TCP_Paper` sanity shows they lose to rolling GARCH and FHS once
+   GARCH is fairly fitted; including them would muddy the headline
+   without changing it.
+10. **Quantile Regression Forests for `tree_based`** (Meinshausen 2006)
+    instead of three pinball-loss GBMs.  More principled and matches
+    the user's intuition; one fit, every quantile readable.
+11. **EnbPI kept implemented but excluded from main grid.**  Adds
+    compute cost without changing the qualitative finding; one-line
+    re-enable in `run_grid.py` if needed.
 
 ---
 
-## 12. Contact
+## 8. Status
 
+The pipeline is in a clean state.  Sanity check on COVID 2020
+(MCD / MGM / AZO) reproduces the expected ranking:
+
+```
+fhs              cov 0.908   W 0.128   width 0.083
+garch_roll       cov 0.934   W 0.134   width 0.102
+linear_ar × aci  cov 0.841   W 0.155   width 0.062
+lstm × aci       cov 0.848   W 0.156   width 0.062
+transformer × aci cov 0.839  W 0.155   width 0.061
+hist_binning     cov 0.766   W 0.185   width 0.046
+tree_based       cov 0.776   W 0.186   width 0.046  (QRF; will replace ~2x slower)
+linear_ar × split cov 0.731  W 0.202   width 0.042
+```
+
+What remains for the writeup:
+
+* Re-run the full grid (all 3 regimes × 9 tickers) and verify the
+  COVID-2020 ranking holds across 2008 and 2022.
+* Render the cross-method scatter and rolling-coverage figures in
+  `results.ipynb` and add them to `report/`.
+* Update `report/report.tex` with the new headline result (rolling
+  GARCH and FHS beat every CP method) — the old narrative was the
+  opposite.

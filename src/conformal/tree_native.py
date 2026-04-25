@@ -108,14 +108,13 @@ class QuantileTreeNative(IntervalPredictor):
 
     n_train = len(self._train_y)
     n_trees = len(test_leaves)
-    weights = np.zeros(n_train, dtype=np.float64)
-    for t, leaf_id in enumerate(test_leaves):
-      leaf_size = self._leaf_sizes[t].get(int(leaf_id), 0)
-      if leaf_size == 0:
-        continue
-      mask = self._train_leaves[:, t] == leaf_id
-      weights[mask] += 1.0 / leaf_size
-    weights /= n_trees  # average across trees
+    # Vectorised Meinshausen weighting:
+    #   mask[i, t] = 1 if training point i lands in same leaf as the test point in tree t
+    #   weight[i] = (1/n_trees) * Σ_t mask[i, t] / |leaf_t(test)|
+    mask = self._train_leaves == test_leaves[np.newaxis, :]  # (n_train, n_trees)
+    leaf_sizes_for_test = mask.sum(axis=0)                   # (n_trees,)
+    safe_sizes = np.where(leaf_sizes_for_test > 0, leaf_sizes_for_test, 1)
+    weights = (mask / safe_sizes[np.newaxis, :]).sum(axis=1) / n_trees
 
     # Weighted empirical CDF
     order = np.argsort(self._train_y)

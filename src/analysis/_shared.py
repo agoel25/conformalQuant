@@ -275,30 +275,17 @@ def make_wrapper(
   wrapper_kind: str | None = None,
   step_size: float | None = None,
   *,
-  # EnbPI knobs
-  B: int | None = None,
-  block_size: int = 1,
-  aggregation: str = "mean",
-  window_length: int | None = None,
-  random_state: int = 59,
   # AgACI knobs
   gamma_grid: np.ndarray | None = None,
   eta: float = 1.0,
-  # TCP / TCP-RM knobs
-  tcp_window: int = 252,
-  tcp_calib: int = 60,
-  tcp_refit_every: int = 1,
-  gamma_0: float = 0.01,
-  rm_lambda: float = 1.0,
-  rm_beta: float = 0.6,
 ) -> IntervalPredictor:
   """Construct a conformal wrapper by kind.
 
-  Preferred API: pass wrapper_kind ∈ {"split", "aci", "enbpi", "agaci", "tcp", "tcp_rm"}.
-  Back-compat API: pass step_size=None (→ split) or step_size>0 (→ aci) per the
-  old signature; existing notebooks work unchanged.
+  Preferred API: pass ``wrapper_kind ∈ {"split", "aci", "agaci"}``.
+  Back-compat API: pass ``step_size=None`` (→ split) or ``step_size>0`` (→ aci);
+  older notebooks work unchanged.
 
-  Defaults to confidence_level=0.90 to match the proposal / Metrics.md target.
+  Defaults to ``confidence_level=0.90`` to match the proposal / Metrics.md target.
   """
   kind = _resolve_wrapper_kind(wrapper_kind, step_size)
 
@@ -319,21 +306,6 @@ def make_wrapper(
       step_size=step_size if step_size is not None else 0.01,
     )
 
-  if kind == "enbpi":
-    from src.conformal.enbpi_conformal import EnbPIConformal
-    default_B = 10 if model_class.__name__ in _DEEP_MODEL_NAMES else 25
-    return EnbPIConformal(
-      model_class=model_class,
-      label_col_name=label_col,
-      num_lags=num_lags,
-      confidence_level=confidence_level,
-      B=B if B is not None else default_B,
-      block_size=block_size,
-      aggregation=aggregation,
-      window_length=window_length,
-      random_state=random_state,
-    )
-
   if kind == "agaci":
     from src.conformal.agaci_conformal import AgACIConformal
     grid = gamma_grid if gamma_grid is not None else np.geomspace(0.001, 0.1, 12)
@@ -346,36 +318,9 @@ def make_wrapper(
       eta=eta,
     )
 
-  if kind == "tcp":
-    from src.conformal.tcp_conformal import TCPConformal
-    return TCPConformal(
-      model_class=model_class,
-      label_col_name=label_col,
-      num_lags=num_lags,
-      confidence_level=confidence_level,
-      window=tcp_window,
-      calib=tcp_calib,
-      refit_every=tcp_refit_every,
-    )
-
-  if kind == "tcp_rm":
-    from src.conformal.tcp_conformal import TCPRMConformal
-    return TCPRMConformal(
-      model_class=model_class,
-      label_col_name=label_col,
-      num_lags=num_lags,
-      confidence_level=confidence_level,
-      window=tcp_window,
-      calib=tcp_calib,
-      refit_every=tcp_refit_every,
-      gamma_0=gamma_0,
-      rm_lambda=rm_lambda,
-      rm_beta=rm_beta,
-    )
-
   raise ValueError(
     f"Unknown wrapper_kind={wrapper_kind!r}. "
-    "Expected one of: 'split', 'aci', 'enbpi', 'agaci', 'tcp', 'tcp_rm'."
+    "Expected one of: 'split', 'aci', 'agaci'."
   )
 
 

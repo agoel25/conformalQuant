@@ -18,17 +18,17 @@ Two concrete classes:
       The TCP paper's GARCH baseline (Aich et al. 2026 eq. 5–6):
       hardcoded (ω=1e-6, α=0.05, β=0.9) on fractional returns,
       equivalently (ω=0.01, α=0.05, β=0.9) on percent returns; zero
-      mean, normal innovations.  Implemented via
-      ``arch_model.fix()`` so the recursion comes straight from the
-      library — we are not re-implementing GARCH ourselves.
+      mean, normal innovations.  Used only in the TCP_Paper sanity
+      check.
 
   RollingGarch
-      Properly fitted GARCH(1,1) with constant mean, Student-t
-      innovations, re-estimated on a trailing window every
-      ``refit_every`` steps via ``arch_model.fit()``.  Intervals use
-      the parametric Student-t quantile of the fitted distribution
-      (no additional conformal layer — adding a conformal q_hat to a
-      properly calibrated parametric model just inflates widths).
+      The fair industry baseline.  Properly fitted GARCH(1,1) with
+      constant mean and Student-t innovations, re-estimated on a
+      trailing window every ``refit_every`` steps via
+      ``arch_model.fit()``.  Intervals use the parametric Student-t
+      quantile of the fitted distribution (no additional conformal
+      layer — adding one on top of a properly calibrated parametric
+      model just inflates widths and hurts Winkler).
 """
 from __future__ import annotations
 
@@ -219,55 +219,4 @@ class RollingGarch(IntervalPredictor):
     sigma_next_pct = float(np.sqrt(forecast.variance.values[-1, 0]))
     sigma_next = sigma_next_pct / _SCALE
     margin = self._z_param * sigma_next
-    return self._mu_frac, self._mu_frac - margin, self._mu_frac + margin
-
-
-# ---------------------------------------------------------------------------
-# 3. Legacy static GARCH — kept for back-compat, NOT used in the main grid.
-# ---------------------------------------------------------------------------
-
-class Garch(IntervalPredictor):
-  """One-shot MLE-fit GARCH with conformal q_hat.  Deprecated; use RollingGarch."""
-
-  def __init__(self, label_col_name, num_lags=1, confidence_level=0.95):
-    super().__init__(label_col_name=label_col_name, num_lags=num_lags,
-                     confidence_level=confidence_level)
-    self._params = None
-    self._mu_frac = 0.0
-    self.q_hat = None
-
-  @override
-  def fit_and_calibrate(self, train_data, calib_data=None):
-    if calib_data is None:
-      raise ValueError("Calibration data required.")
-    train_pct = train_data[self.label_col_name].dropna() * _SCALE
-    am = arch_model(train_pct, mean="Constant", vol="Garch", p=1, q=1,
-                    dist="studentst", rescale=False)
-    res = am.fit(disp="off", show_warning=False)
-    ab = float(res.params["alpha[1]"]) + float(res.params["beta[1]"])
-    if ab >= 1.0:
-      raise RuntimeError(f"non-stationary fit (α+β={ab:.3f})")
-    self._params = res.params.copy()
-    self._mu_frac = float(res.params["mu"]) / _SCALE
-
-    full_pct = pd.concat([train_data[self.label_col_name], calib_data[self.label_col_name]]).dropna() * _SCALE
-    am_full = arch_model(full_pct, mean="Constant", vol="Garch", p=1, q=1,
-                         dist="studentst", rescale=False)
-    fit_full = am_full.fix(self._params)
-    vol_pct = np.asarray(fit_full.conditional_volatility)
-    calib_n = len(calib_data[self.label_col_name].dropna())
-    calib_vol = vol_pct[-calib_n:] / _SCALE
-    actuals = calib_data[self.label_col_name].dropna().values
-    resids = np.abs(actuals - self._mu_frac)
-    self.q_hat = float(np.quantile(resids / calib_vol, 1 - self.alpha))
-
-  @override
-  def predict_with_interval(self, data):
-    history_pct = data[self.label_col_name].dropna().values * _SCALE
-    am = arch_model(history_pct, mean="Constant", vol="Garch", p=1, q=1,
-                    dist="studentst", rescale=False)
-    fit_rolling = am.fix(self._params)
-    forecast = fit_rolling.forecast(horizon=1, reindex=False)
-    sigma_next = float(np.sqrt(forecast.variance.values[-1, 0])) / _SCALE
-    margin = self.q_hat * sigma_next
     return self._mu_frac, self._mu_frac - margin, self._mu_frac + margin
