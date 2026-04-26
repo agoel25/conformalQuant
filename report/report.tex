@@ -220,9 +220,8 @@ We note that the TCP paper \citep{aich2026} compares against a hardcoded GARCH w
 \textbf{Future work.} The most direct fix for CP in this setting would be to use GARCH-standardised residuals as conformal scores rather than raw residuals, combining the volatility model's width adaptation with the distribution-free coverage guarantee. Our codebase supports this as a wrapper-level change without modifying the underlying models.
 
 
-\begin{ack}
+\section*{Source Code}
 Code, interval CSVs, and the full metrics table are available at \url{https://github.com/agoel25/conformalQuant}.
-\end{ack}
 
 \printbibliography
 
@@ -246,6 +245,24 @@ python scripts/build_artifacts.py # metrics_long.csv + paper figures
 \includegraphics[width=\linewidth]{figures/crisis_timeline.pdf}
 \caption{Train, calibration, and test windows for each crisis regime. Tickers are chosen to represent sectors most exposed to each crisis. Crisis onset and end dates are fixed from documented external events to avoid circularity in adaptation-speed measurement.}
 \label{fig:crisis_timeline}
+\end{figure}
+
+\subsection*{Crisis window validation}
+
+Our crisis onset and end dates are fixed exogenously from documented market events (Lehman bankruptcy filing, S\&P~500 pre-crash peak, Fed rate-hike cycle start) rather than derived from the return series. This avoids circularity: if we detected regime changes from the data, our adaptation-speed metric would be measuring how quickly each method responds to a threshold we chose to match the data. \cref{fig:regime_cumreturn,fig:regime_vol} confirm that the exogenous dates align with actual drawdowns and volatility spikes for every ticker in our crash baskets.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{figures/regime_cumreturn.pdf}
+\caption{Cumulative log return per ticker over the test window. Red shading marks the exogenous crisis window. Every ticker exhibits a clear drawdown coinciding with the shaded region, confirming the fixed dates capture real stress periods. The 2008 financials (AIG, GNW) show the deepest drawdowns; the 2022 tickers show a more gradual decline consistent with the rate-hike cycle.}
+\label{fig:regime_cumreturn}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{figures/regime_volatility.pdf}
+\caption{Rolling 20-day annualized realized volatility per ticker. Volatility spikes sharply inside the crisis window for all tickers, with the 2008 and 2020 crises producing the most pronounced spikes. This validates that the high-volatility mask used in conditional coverage (75th-percentile threshold) aligns with the crisis periods where interval quality matters most.}
+\label{fig:regime_vol}
 \end{figure}
 
 \subsection*{Per-regime breakdown}
