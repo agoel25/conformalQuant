@@ -58,16 +58,12 @@ Conformal prediction (CP) \citep{vovk2005} produces distribution-free intervals 
 
 We address this directly. Our contributions are:
 \begin{enumerate}[nosep,leftmargin=*]
-    \item A systematic comparison of CP methods (split, ACI, AgACI with linear/tree/neural base predictors) and TCP against properly-fitted rolling GARCH and FHS across nine (ticker, crisis) pairs spanning three structurally distinct crises, using the Winkler score as the primary metric.
+    \item A systematic comparison of CP methods (split, ACI, AgACI with linear/tree/neural base predictors) and TCP against properly-fitted rolling GARCH and FHS across nine (ticker, crisis) pairs spanning three structurally distinct crises.
     \item An online extension of histogram binning and Quantile Regression Forests via per-step updates, testing whether CP's formal apparatus is necessary to match its empirical performance.
-    \item A controlled re-evaluation of TCP against rolling GARCH, clarifying that TCP's reported gains are partly attributable to baseline choice and identifying the remaining structural bottleneck: CP calibration reflects a pre-crisis distributional regime that online quantile adjustment cannot fully escape.
+    \item A controlled re-evaluation of TCP against rolling GARCH, showing that TCP's reported gains partly reflect baseline choice and that rolling calibration still lags crisis volatility.
 \end{enumerate}
 
-Our headline finding is negative: CP methods cannot outperform rolling GARCH and FHS. The gap is structural --- GARCH widens intervals through the variance recursion at every step; CP methods are bounded by their calibration residuals and expand far more slowly. The exchangeability violation in equity returns is not a technical inconvenience that adaptive CP overcomes --- it is the central obstacle, and current methods have not solved it.
-
 \section{Related Work}
-
-% \textbf{Industry volatility models.} \citet{engle1982} and \citet{bollerslev1986} establish GARCH, which parameterises conditional variance as \(h_t = \omega + \alpha r_{t-1}^2 + \beta h_{t-1}\), enabling one-step-ahead variance forecasts. \citet{barone2001} introduce FHS, which fits GARCH to standardise residuals then samples empirical quantiles of the standardised series, avoiding any distributional assumption on innovations. Both are standard in risk practice \citep{mcneil2015}.
 
 \textbf{CP for non-stationary sequences.} \citet{gibbs2021} relax the exchangeability requirement by updating the target miscoverage \(\alpha_t\) online from observed coverage errors (ACI). \citet{zaffran2022} aggregate multiple ACI copies with different learning rates via an online expert algorithm to remove the need to tune the learning rate (AgACI). \citet{aich2026} propose TCP, which uses rolling-window split-conformal calibration from a trailing window of recent observations rather than a fixed pre-crisis calibration set.
 
@@ -111,10 +107,10 @@ It jointly penalises interval width and miscoverage at a 20:1 ratio (\(\alpha = 
 
 \section{Results}
 
-\cref{tab:main} summarises all methods averaged across the nine ticker-regime cells, sorted by Winkler score.
+\cref{tab:main} summarises representative methods sorted by Winkler score; remaining wrapper--model combinations are included in the dumbbell chart (\cref{fig:dumbbell}).
 
 \begin{table}[t]
-\caption{Main results averaged across nine ticker-regime cells, sorted by Winkler score (lower is better). \textbf{Gap} is $\text{Cov}_{\text{low-vol}} - \text{Cov}_{\text{high-vol}}$ (lower = more consistent). \textbf{Exp.} is crisis-period width divided by overall width. Nominal target: coverage 0.90, gap 0.00. $\dagger$ TCP uses daily refit; all other methods use 21-step refit cadence.}
+\caption{Main results sorted by Winkler score (lower is better). \textbf{Gap} is $\text{Cov}_{\text{low-vol}} - \text{Cov}_{\text{high-vol}}$ (lower = more consistent). \textbf{Exp.} is crisis-period width divided by overall width. Nominal target: coverage 0.90, gap 0.00. $\dagger$ TCP uses daily refit; all other methods use 21-step refit cadence. $\ddagger$ GARCH-Roll and FHS are averaged over 7 cells (AIG and GNW excluded from 2008 due to near-unit-root MLE convergence; see Limitations); all other methods over 9 cells.}
 \label{tab:main}
 \centering
 \small
@@ -123,8 +119,8 @@ It jointly penalises interval width and miscoverage at a 20:1 ratio (\(\alpha = 
 \toprule
 Model & Wrapper & Marg.\ Cov & Cov.\ Crisis & Gap & Winkler & Width & Exp. \\
 \midrule
-GARCH-Roll & Native & 0.949 & 0.895 & 0.047 & \textbf{0.199} & 0.156 & 1.42$\times$ \\
-FHS        & Native & 0.915 & 0.857 & 0.077 & 0.242 & 0.164 & 1.56$\times$ \\
+GARCH-Roll$^\ddagger$ & Native & 0.949 & 0.895 & 0.047 & \textbf{0.199} & 0.156 & 1.42$\times$ \\
+FHS$^\ddagger$        & Native & 0.915 & 0.857 & 0.077 & 0.242 & 0.164 & 1.56$\times$ \\
 TCP$^\dagger$ & Daily  & 0.897 & 0.813 & 0.082 & 0.281 & 0.177 & 1.36$\times$ \\
 \midrule
 LSTM       & ACI    & 0.820 & 0.668 & 0.174 & 0.305 & 0.109 & 1.18$\times$ \\
@@ -141,7 +137,7 @@ LSTM       & Split  & 0.694 & 0.462 & 0.312 & 0.399 & 0.072 & 1.00$\times$ \\
 \subsection{RQ1: Can CP outperform GARCH and FHS?}
 \label{sec:rq1}
 
-No. Rolling GARCH achieves a Winkler score of 0.199 and FHS 0.242. The best conformal method, LSTM~$\times$~ACI, scores 0.305 -- 53\% worse than GARCH. This gap is consistent across all three crisis regimes (see \cref{app:regime}). GARCH and FHS also maintain near-nominal marginal coverage (0.949 and 0.915 respectively) with the smallest coverage gaps (0.047 and 0.077), meaning their coverage is consistent across high- and low-volatility periods. ACI/AgACI variants drop to 0.81--0.82 marginal coverage (gaps 0.16--0.20), and split-CP to 0.68--0.69 (gaps over 0.30).
+No. Rolling GARCH achieves a Winkler score of 0.199 and FHS 0.242, averaged over 7 of the 9 cells (AIG and GNW are excluded from 2008 due to near-unit-root MLE convergence; see Limitations). The best conformal method, LSTM~$\times$~ACI, scores 0.305 -- 53\% worse than GARCH. This gap is consistent across all three crisis regimes (see \cref{app:regime}). GARCH and FHS also maintain near-nominal marginal coverage (0.949 and 0.915 respectively) with the smallest coverage gaps (0.047 and 0.077), meaning their coverage is consistent across high- and low-volatility periods. ACI/AgACI variants drop to 0.81--0.82 marginal coverage (gaps 0.16--0.20), and split-CP to 0.68--0.69 (gaps over 0.30).
 
 \subsection{RQ2: Why -- the width adaptation mechanism}
 \label{sec:rq2}
@@ -170,12 +166,12 @@ The mechanism is structural. GARCH intervals are \(\hat{\mu} \pm z \cdot \sigma_
 \label{fig:dumbbell}
 \end{figure}
 
-Adaptation speed tells the same story. We measure \(T_{\text{recovery}}\): trading days from crisis onset until rolling 20-day coverage reaches 0.85 for five consecutive days. GARCH recovers immediately (\(T_{\text{recovery}} = 0\), coverage never drops below threshold). FHS recovers within 4 days on average. QRF-Online takes approximately 27 days, ACI variants 42--47 days, and split-CP methods rarely recover at all within the crisis window (mean \(T_{\text{recovery}} > 50\) days, recovery rate 44--56\%). The ordering mirrors width expansion: methods that widen faster also recover coverage faster.
+Adaptation speed tells the same story. Measuring \(T_{\text{recovery}}\) as trading days from crisis onset until rolling 20-day coverage reaches 0.85 for five consecutive days, GARCH recovers immediately (\(T_{\text{recovery}} = 0\)), FHS within 4 days, QRF-Online in~27 days, ACI variants in 42--47 days, and split-CP methods rarely recover at all (mean \(T_{\text{recovery}} > 50\) days).
 
 \subsection{RQ3: Base model complexity does not help}
 \label{sec:rq3}
 
-Within any conformal wrapper, base model complexity makes almost no difference. LSTM~$\times$~ACI (0.305), LinAR~$\times$~ACI (0.307), and Transformer~$\times$~ACI (0.311) are statistically indistinguishable. The same pattern holds for AgACI and split. This finding is consistent with \citet{fantazzini2024}, who observe a similar insensitivity to model choice for CP on crypto-assets. The conformal calibration mechanism, not the base predictor's accuracy, determines interval quality.
+Within any conformal wrapper, base model complexity makes almost no difference. LSTM~$\times$~ACI (0.305), LinAR~$\times$~ACI (0.307), and Transformer~$\times$~ACI (0.311) differ by less than 2\% and show no consistent ordering across individual ticker-regime cells. The same pattern holds for AgACI and split. This finding is consistent with \citet{fantazzini2024}, who observe a similar insensitivity to model choice for CP on crypto-assets. The conformal calibration mechanism, not the base predictor's accuracy, determines interval quality.
 
 \subsection{RQ4: Simple online methods match CP-wrapped neural networks}
 \label{sec:rq4}
@@ -211,6 +207,8 @@ Critically, the TCP paper \citep{aich2026} compares against a hardcoded GARCH wi
 
 \textbf{Summary.} CP methods, even adaptive variants, cannot outperform properly-calibrated rolling GARCH and FHS for daily equity return intervals across crisis regimes. The failure is structural and can be stated concisely: conformal scores are \emph{backward-looking} --- they are quantiles of a stored residual distribution that can only change as new observations accumulate --- while GARCH is \emph{forward-looking} --- the variance recursion \(h_{t+1} = \omega + \alpha r_t^2 + \beta h_t\) is a one-step-ahead forecast that incorporates yesterday's shock immediately. This asymmetry means GARCH adapts at the speed of the data, while CP adapts at the speed of the calibration window.
 
+\textbf{Strengths.} Our comparison is controlled and practitioner-relevant: we evaluate against properly-fitted rolling GARCH rather than the static baselines used in prior work, equalize refit cadence across methods, and the full pipeline is reproducible from a single script.
+
 \textbf{Limitations.} Three tickers per regime is a small basket; a broader cross-section would tighten variance. The 2008 window dropped AIG and GNW for GARCH because the pre-crisis period caused MLE to converge to a near-unit-root solution, reflecting genuine financial instability rather than an implementation issue. TCP's daily refit is compared against GARCH's monthly parameter refit, though GARCH's variance recursion adapts every step regardless.
 
 \textbf{Future work.} The most direct fix for CP in this setting would be to use GARCH-standardised residuals as conformal scores rather than raw residuals, combining the volatility model's width adaptation with the distribution-free coverage guarantee. Our codebase supports this as a wrapper-level change without modifying the underlying models.
@@ -235,7 +233,7 @@ python scripts/build_artifacts.py # metrics_long.csv + paper figures
 
 \subsection*{Experimental timeline}
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
 \includegraphics[width=\linewidth]{figures/crisis_timeline.pdf}
 \caption{Train, calibration, and test windows for each crisis regime. Tickers are chosen to represent sectors most exposed to each crisis. Crisis onset and end dates are fixed from documented external events to avoid circularity in adaptation-speed measurement.}
@@ -246,14 +244,14 @@ python scripts/build_artifacts.py # metrics_long.csv + paper figures
 
 Our crisis onset and end dates are fixed exogenously from documented market events (Lehman bankruptcy filing, S\&P~500 pre-crash peak, Fed rate-hike cycle start) rather than derived from the return series. This avoids circularity: if we detected regime changes from the data, our adaptation-speed metric would be measuring how quickly each method responds to a threshold we chose to match the data. \cref{fig:regime_cumreturn,fig:regime_vol} confirm that the exogenous dates align with actual drawdowns and volatility spikes for every ticker in our crash baskets.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
 \includegraphics[width=0.95\linewidth]{figures/regime_cumreturn.pdf}
 \caption{Cumulative log return per ticker. Red shading = exogenous crisis window. Every ticker shows a clear drawdown inside the shaded region.}
 \label{fig:regime_cumreturn}
 \end{figure}
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
 \includegraphics[width=0.95\linewidth]{figures/regime_volatility.pdf}
 \caption{Rolling 20-day annualized realized volatility. Volatility spikes sharply inside the crisis window for all tickers, confirming the fixed dates capture genuine regime shifts.}
@@ -262,7 +260,7 @@ Our crisis onset and end dates are fixed exogenously from documented market even
 
 \subsection*{Per-regime breakdown}
 
-\begin{table}[h]
+\begin{table}[ht]
 \caption{Marginal coverage by crisis regime for selected methods, averaged over the three tickers in each regime. Full 114-row results are in \texttt{results/metrics\_long.csv}.}
 \label{app:regime}
 \centering
@@ -284,7 +282,7 @@ LSTM       & Split  & 0.517 & 0.753 & 0.812 \\
 
 \subsection*{Rolling 20-day coverage trajectories}
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
 \includegraphics[width=\linewidth]{figures/rolling_coverage.pdf}
 \caption{Rolling 20-day coverage averaged across tickers in each regime. Gray lines (GARCH-Roll, FHS) remain near the 0.90 nominal line (dotted) through the crisis windows (red shading). Conformal methods (green, orange) dip sharply at onset and recover slowly. Line style encodes wrapper type: solid = native, dashed = split, dotted = ACI, dash-dot = AgACI.}
