@@ -46,7 +46,7 @@ from src.plotting import CATEGORY_COLORS, METHOD_COLORS, plot_interval_timeline
 
 ALPHA = 0.10
 FIGURES_DIR = ROOT / "report" / "figures"
-PANEL_FIGSIZE = (11, 4)
+PANEL_FIGSIZE = (7, 4.5)
 
 # Display labels — match build_artifacts.py so report-wide naming stays consistent.
 _METHOD_LABEL = {
@@ -141,7 +141,7 @@ def _polish_panel(
   ax.set_title(
     f"{_method_label(model, wrapper)}  ({ticker}, {_REGIME_LABEL.get(regime, regime)})\n"
     f"cov={cov:.2f}  crisis cov={crisis_cov:.2f}  W={W:.3f}",
-    fontsize=10,
+    fontsize=12,
   )
   ax.set_xlabel("")
   ax.xaxis.set_major_formatter(mdates.DateFormatter("%b'%y"))
@@ -156,7 +156,7 @@ def _polish_panel(
       Line2D([0], [0], marker="o", color="#d62728", markeredgecolor="black",
              markersize=6, linestyle="", label="Missed"),
     ]
-    ax.legend(handles=handles, loc="lower right", fontsize=8, framealpha=0.85)
+    ax.legend(handles=handles, loc="lower right", fontsize=9, framealpha=0.85)
 
 
 def _build_two_panel(
@@ -220,7 +220,7 @@ def _build_two_panel(
   # sharey leaves the duplicate ylabel on the right axis — drop it.
   axes[1].set_ylabel("")
 
-  fig.suptitle(suptitle, fontsize=12, y=1.02)
+  fig.suptitle(suptitle, fontsize=13, y=1.02)
   fig.tight_layout()
   _save(fig, out_stem)
   plt.close(fig)
