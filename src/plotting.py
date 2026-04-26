@@ -83,11 +83,15 @@ def plot_interval_timeline(
   alpha_nominal: float = 0.10,
   save_path: Path | str | None = None,
   figsize: tuple[float, float] = (11, 4),
+  ax: plt.Axes | None = None,
 ) -> plt.Figure:
   """Render the per-cell timeline figure and (optionally) save to disk.
 
   ``intervals`` must contain columns: date (in index or column), point, l, u, r.
   Coverage / Winkler / width in the title come from ``src.metrics.Metrics``.
+
+  When ``ax`` is given, draws onto it (caller owns the figure: ``figsize``,
+  ``save_path``, and ``tight_layout`` are skipped). Returns ``ax.figure``.
   """
   df = _to_metrics_frame(intervals)
   realized = df[str(PredictionCols.LOG_RETURNS)].astype(float).values
@@ -104,7 +108,12 @@ def plot_interval_timeline(
 
   color = _interval_color(model, category)
 
-  fig, ax = plt.subplots(figsize=figsize)
+  if ax is None:
+    fig, ax = plt.subplots(figsize=figsize)
+    own_fig = True
+  else:
+    fig = ax.figure
+    own_fig = False
 
   # Crisis shading first so it's underneath
   ax.axvspan(crisis_start, crisis_end, color="red", alpha=0.06, zorder=1)
@@ -136,12 +145,13 @@ def plot_interval_timeline(
   ax.grid(True, alpha=0.25, linewidth=0.5)
   ax.legend(loc="upper right", fontsize=8, ncols=2, framealpha=0.85)
 
-  fig.tight_layout()
-  if save_path is not None:
-    save_path = Path(save_path)
-    save_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(save_path, dpi=140, bbox_inches="tight")
-    fig.savefig(save_path.with_suffix(".pdf"), bbox_inches="tight")
+  if own_fig:
+    fig.tight_layout()
+    if save_path is not None:
+      save_path = Path(save_path)
+      save_path.parent.mkdir(parents=True, exist_ok=True)
+      fig.savefig(save_path, dpi=140, bbox_inches="tight")
+      fig.savefig(save_path.with_suffix(".pdf"), bbox_inches="tight")
 
   return fig
 
