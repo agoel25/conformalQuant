@@ -28,8 +28,7 @@
 \usepackage[capitalize,noabbrev]{cleveref}
 
 
-\title{Can Conformal Prediction Outperform Volatility Models\\
-for Financial Return Intervals? A Negative Result}
+\title{Can Conformal Prediction Outperform Volatility Models for Financial Return Intervals? \\ A Negative Result}
 
 
 \author{%
@@ -172,26 +171,47 @@ The mechanism is structural. GARCH intervals are \(\hat{\mu} \pm z \cdot \sigma_
 \label{fig:dumbbell}
 \end{figure}
 
-\subsection{RQ3 and RQ4: Model complexity and simple adaptive methods}
+Adaptation speed tells the same story. We measure \(T_{\text{recovery}}\): trading days from crisis onset until rolling 20-day coverage reaches 0.85 for five consecutive days. GARCH recovers immediately (\(T_{\text{recovery}} = 0\), coverage never drops below threshold). FHS recovers within 4 days on average. QRF-Online takes approximately 27 days, ACI variants 42--47 days, and split-CP methods rarely recover at all within the crisis window (mean \(T_{\text{recovery}} > 50\) days, recovery rate 44--56\%). The ordering mirrors width expansion: methods that widen faster also recover coverage faster.
+
+\subsection{RQ3: Base model complexity does not help}
 \label{sec:rq3}
 
 Within any conformal wrapper, base model complexity makes almost no difference. LSTM~$\times$~ACI (0.305), LinAR~$\times$~ACI (0.307), and Transformer~$\times$~ACI (0.311) are statistically indistinguishable. The same pattern holds for AgACI and split. This finding is consistent with \citet{fantazzini2024}, who observe a similar insensitivity to model choice for CP on crypto-assets. The conformal calibration mechanism, not the base predictor's accuracy, determines interval quality.
 
-This has a direct consequence: online QRF without any conformal layer scores 0.309 Winkler, matching LSTM~$\times$~ACI (0.305). Online Hist-Bin (0.344) also outperforms split-CP (0.399--0.408). The online adaptation matters; the conformal wrapper on top of a neural network does not add meaningful value once the calibration data has drifted. QRF's relative advantage over Hist-Bin reflects the fact that the leaf-weighting structure gives smoother quantile estimates as the lag-feature distribution shifts into a crisis regime.
+\subsection{RQ4: Simple online methods match CP-wrapped neural networks}
+\label{sec:rq4}
+
+The previous finding has a direct consequence: online QRF without any conformal layer scores 0.309 Winkler, matching LSTM~$\times$~ACI (0.305). Online Hist-Bin (0.344) also outperforms split-CP (0.399--0.408). The online adaptation matters; the conformal wrapper on top of a neural network does not add meaningful value once the calibration data has drifted. QRF's relative advantage over Hist-Bin reflects the fact that the leaf-weighting structure gives smoother quantile estimates as the lag-feature distribution shifts into a crisis regime.
+
+\cref{fig:qrf_timeline} illustrates this on MCD during the 2020 COVID crash. QRF-Online widens its intervals during the crisis via the expanding leaf pool, achieving 1.35$\times$ expansion without any conformal machinery. In contrast, LSTM~$\times$~Split intervals are completely frozen at 1.00$\times$, accumulating misses throughout the volatile period.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/timeline_qrf_online.pdf}
+\caption{QRF-Online (left) expands intervals during the 2020 COVID crash via its online-adapted leaf pool (1.35$\times$ expansion), matching LSTM~$\times$~ACI at a fraction of the complexity. LSTM~$\times$~Split (right) is frozen at 1.00$\times$, accumulating missed observations (red dots) throughout the crisis window (red shading).}
+\label{fig:qrf_timeline}
+\end{figure}
 
 \subsection{RQ5: TCP as a partial fix}
 \label{sec:rq5}
 
 TCP with daily recalibration (Winkler 0.281) outperforms every standard CP method while maintaining near-nominal marginal coverage (0.897). It achieves this by replacing the frozen calibration set with a rolling 60-day window: after 30 days of a crisis, \(C_t\) is estimated from 30 actual crisis observations, so the ceiling on interval width is reset to match the current regime. This removes the hard cap that limits ACI and AgACI.
 
-However, TCP still falls behind GARCH (0.199) and FHS (0.242). Two factors explain the remaining gap. First, TCP's rolling window fills with crisis data gradually: on day 1 of a crisis, \(C_t\) is still estimated from 60 pre-crisis calibration rows. The 60-day calibration window must fill entirely with crisis returns before \(C_t\) fully reflects the new regime. GARCH's variance recursion is current as of yesterday's return with no lag. Second, even once the crisis returns dominate the calibration window, TCP's intervals during calm periods are wider than needed (width 0.177 vs GARCH's 0.156), indicating that the empirical quantile of the rolling window introduces more noise than the parametric GARCH form.
+However, TCP still falls behind GARCH (0.199) and FHS (0.242). Two factors explain the remaining gap. First, TCP's rolling window fills with crisis data gradually: on day 1 of a crisis, \(C_t\) is still estimated from 60 pre-crisis calibration rows. The 60-day calibration window must fill entirely with crisis returns before \(C_t\) fully reflects the new regime. GARCH's variance recursion is current as of yesterday's return with no lag. \cref{fig:tcp_timeline} illustrates this entry lag on MCD during the 2020 crisis: GARCH widens immediately at crisis onset, while TCP ramps up over several weeks. Second, even in calm periods TCP's intervals are wider than needed (width 0.177 vs GARCH's 0.156), because the empirical quantile of a 60-day rolling window is noisier than the parametric GARCH form.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/timeline_tcp_vs_garch.pdf}
+\caption{GARCH-Roll (left) widens immediately at crisis onset and contracts quickly afterward. TCP (right) widens gradually as the 60-day calibration window absorbs crisis returns, lagging GARCH's response by several weeks.}
+\label{fig:tcp_timeline}
+\end{figure}
 
 We note that the TCP paper \citep{aich2026} compares against a hardcoded GARCH with non-estimated parameters (\(\omega=10^{-6}\), \(\alpha=0.05\), \(\beta=0.90\)) and normal innovations, which is substantially weaker than a properly-fitted rolling GARCH. Our rolling GARCH with MLE-estimated Student-\(t\) parameters closes most of the gap that \citealt{aich2026} attribute to TCP's design advantage.
 
 
 \section{Discussion}
 
-\textbf{Summary.} CP methods, even adaptive variants, cannot outperform properly-calibrated rolling GARCH and FHS for daily equity return intervals across crisis regimes. The failure is structural: CP calibration data reflects a pre-crisis return distribution that online quantile adjustment cannot compensate for fast enough. GARCH's closed-form variance recursion updates width every step at zero lag, which is what matters during rapidly evolving crises.
+\textbf{Summary.} CP methods, even adaptive variants, cannot outperform properly-calibrated rolling GARCH and FHS for daily equity return intervals across crisis regimes. The failure is structural and can be stated concisely: conformal scores are \emph{backward-looking} --- they are quantiles of a stored residual distribution that can only change as new observations accumulate --- while GARCH is \emph{forward-looking} --- the variance recursion \(h_{t+1} = \omega + \alpha r_t^2 + \beta h_t\) is a one-step-ahead forecast that incorporates yesterday's shock immediately. This asymmetry means GARCH adapts at the speed of the data, while CP adapts at the speed of the calibration window.
 
 \textbf{Strengths.} This is the first comparison of CP against properly-specified rolling GARCH across three structurally distinct crises. The width expansion metric makes the mechanism transparent rather than just reporting aggregate scores. The online native methods (QRF, Hist-Bin) show a practitioner path: simple adaptive strategies without conformal machinery match complex CP-wrapped neural networks.
 
@@ -218,6 +238,15 @@ All results are fully reproducible from the project root:
 python scripts/run_grid.py        # generates all interval CSVs (~15 min CPU)
 python scripts/build_artifacts.py # metrics_long.csv + paper figures
 \end{verbatim}
+
+\subsection*{Experimental timeline}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{figures/crisis_timeline.pdf}
+\caption{Train, calibration, and test windows for each crisis regime. Tickers are chosen to represent sectors most exposed to each crisis. Crisis onset and end dates are fixed from documented external events to avoid circularity in adaptation-speed measurement.}
+\label{fig:crisis_timeline}
+\end{figure}
 
 \subsection*{Per-regime breakdown}
 

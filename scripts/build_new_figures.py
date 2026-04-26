@@ -32,16 +32,44 @@ if str(ROOT) not in sys.path:
 
 import matplotlib
 matplotlib.use("Agg")
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 import numpy as np
 import pandas as pd
 
 from src.analysis._shared import CRISIS_WINDOWS, MODEL_CATEGORIES, RESULTS_DIR
-from src.plotting import plot_interval_timeline
+from src.metrics.metrics import Metrics
+from src.metrics.prediction_cols import PredictionCols
+from src.plotting import CATEGORY_COLORS, METHOD_COLORS, plot_interval_timeline
 
 ALPHA = 0.10
 FIGURES_DIR = ROOT / "report" / "figures"
 PANEL_FIGSIZE = (11, 4)
+
+# Display labels — match build_artifacts.py so report-wide naming stays consistent.
+_METHOD_LABEL = {
+  "fhs": "FHS",
+  "garch_roll": "GARCH-Roll",
+  "hist_binning": "Hist-Bin",
+  "tree_based": "QRF",
+  "linear_ar": "LinAR",
+  "lstm": "LSTM",
+  "transformer": "Tx",
+  "tcp_paper": "TCP",
+}
+_WRAPPER_SUFFIX = {
+  "native": "",
+  "split": " × Split",
+  "aci": " × ACI",
+  "agaci": " × AgACI",
+}
+_REGIME_LABEL = {
+  "2008": "2008 Lehman",
+  "2020": "2020 COVID",
+  "2022": "2022 rate hikes",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +98,65 @@ def _save(fig: plt.Figure, stem: Path) -> None:
   fig.savefig(stem.with_suffix(".png"), dpi=150, bbox_inches="tight")
   fig.savefig(stem.with_suffix(".pdf"), bbox_inches="tight")
   print(f"  saved → {stem.relative_to(ROOT)}.{{png,pdf}}")
+
+
+def _method_label(model: str, wrapper: str) -> str:
+  return _METHOD_LABEL.get(model, model) + _WRAPPER_SUFFIX.get(wrapper, f" × {wrapper}")
+
+
+def _band_color(model: str) -> str:
+  cat = MODEL_CATEGORIES.get(model)
+  return METHOD_COLORS.get(model, CATEGORY_COLORS.get(cat or "baseline", "C0"))
+
+
+def _polish_panel(
+  ax: plt.Axes,
+  *,
+  df: pd.DataFrame,
+  model: str,
+  wrapper: str,
+  ticker: str,
+  regime: str,
+  crisis_start: pd.Timestamp,
+  crisis_end: pd.Timestamp,
+  show_legend: bool,
+) -> None:
+  """Rewrite title, drop "Date" xlabel, format dates as Mon'YY, dedupe legend.
+
+  Match the style of report/figures/timeline_comparison.pdf (Figure 1):
+    - title line 1: "Method × Wrapper  (TICKER, regime)"
+    - title line 2: "cov=X.XX  crisis cov=X.XX  W=X.XXX"
+    - legend only on the right panel: 90% interval / Predicted / Missed
+  """
+  metrics_df = df.rename(columns={
+    "r": str(PredictionCols.LOG_RETURNS),
+    "l": str(PredictionCols.LOWER_BOUND),
+    "u": str(PredictionCols.UPPER_BOUND),
+  })
+  m = Metrics(metrics_df, alpha=ALPHA)
+  cov = float(m.get_coverage_metrics().get_marginal_coverage())
+  crisis_cov = float(m.get_coverage_metrics().get_period_coverage(crisis_start, crisis_end))
+  W = float(m.get_winkler_metrics().get_mean_scores()[0])
+
+  ax.set_title(
+    f"{_method_label(model, wrapper)}  ({ticker}, {_REGIME_LABEL.get(regime, regime)})\n"
+    f"cov={cov:.2f}  crisis cov={crisis_cov:.2f}  W={W:.3f}",
+    fontsize=10,
+  )
+  ax.set_xlabel("")
+  ax.xaxis.set_major_formatter(mdates.DateFormatter("%b'%y"))
+
+  if ax.get_legend() is not None:
+    ax.get_legend().remove()
+  if show_legend:
+    color = _band_color(model)
+    handles = [
+      Patch(facecolor=color, alpha=0.22, label="90% interval"),
+      Line2D([0], [0], color=color, linewidth=1.3, label="Predicted"),
+      Line2D([0], [0], marker="o", color="#d62728", markeredgecolor="black",
+             markersize=6, linestyle="", label="Missed"),
+    ]
+    ax.legend(handles=handles, loc="lower right", fontsize=8, framealpha=0.85)
 
 
 def _build_two_panel(
@@ -104,7 +191,7 @@ def _build_two_panel(
   )
   ylim = _shared_ylim(left, right)
 
-  for ax, df, meta in ((axes[0], left, L), (axes[1], right, R)):
+  for i, (ax, df, meta) in enumerate(((axes[0], left, L), (axes[1], right, R))):
     plot_interval_timeline(
       df,
       ax=ax,
@@ -118,9 +205,19 @@ def _build_two_panel(
       alpha_nominal=ALPHA,
     )
     ax.set_ylim(ylim)
+    _polish_panel(
+      ax,
+      df=df,
+      model=str(meta["model"]),
+      wrapper=str(meta["wrapper"]),
+      ticker=str(meta["ticker"]),
+      regime=str(meta["regime"]),
+      crisis_start=crisis_start,
+      crisis_end=crisis_end,
+      show_legend=(i == 1),
+    )
 
-  # The right panel inherits the y-tick labels from the left via sharey,
-  # but the y-axis label was set on both — clear the duplicate on the right.
+  # sharey leaves the duplicate ylabel on the right axis — drop it.
   axes[1].set_ylabel("")
 
   fig.suptitle(suptitle, fontsize=12, y=1.02)
@@ -139,10 +236,7 @@ def build_qrf_online_figure(out_dir: Path) -> None:
     left_path=RESULTS_DIR / "tree_based_native_MCD_2020.csv",
     right_path=RESULTS_DIR / "lstm_split_MCD_2020.csv",
     out_stem=out_dir / "timeline_qrf_online",
-    suptitle=(
-      "QRF-Online (native) vs Split-CP — MCD, 2020 COVID crisis\n"
-      "left: native tree intervals widen during crisis; right: Split-CP intervals are frozen"
-    ),
+    suptitle="Interval width during the 2020 COVID crash: online QRF vs split-CP",
   )
 
 
@@ -156,10 +250,7 @@ def build_tcp_vs_garch_figure(out_dir: Path) -> None:
     left_path=RESULTS_DIR / "garch_roll_native_MCD_2020.csv",
     right_path=RESULTS_DIR / "tcp_paper_native_MCD_2020.csv",
     out_stem=out_dir / "timeline_tcp_vs_garch",
-    suptitle=(
-      "GARCH-Roll vs TCP (paper-faithful) — MCD, 2020 COVID crisis\n"
-      "left: rolling GARCH widens instantly; right: TCP widens gradually as its calibration window absorbs crisis days"
-    ),
+    suptitle="Interval width during the 2020 COVID crash: rolling GARCH vs paper-faithful TCP",
   )
 
 
