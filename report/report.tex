@@ -253,15 +253,15 @@ Our crisis onset and end dates are fixed exogenously from documented market even
 
 \begin{figure}[h]
 \centering
-\includegraphics[width=\linewidth]{figures/regime_cumreturn.pdf}
-\caption{Cumulative log return per ticker over the test window. Red shading marks the exogenous crisis window. Every ticker exhibits a clear drawdown coinciding with the shaded region, confirming the fixed dates capture real stress periods. The 2008 financials (AIG, GNW) show the deepest drawdowns; the 2022 tickers show a more gradual decline consistent with the rate-hike cycle.}
+\includegraphics[width=0.95\linewidth]{figures/regime_cumreturn.pdf}
+\caption{Cumulative log return per ticker. Red shading = exogenous crisis window. Every ticker shows a clear drawdown inside the shaded region.}
 \label{fig:regime_cumreturn}
 \end{figure}
 
 \begin{figure}[h]
 \centering
-\includegraphics[width=\linewidth]{figures/regime_volatility.pdf}
-\caption{Rolling 20-day annualized realized volatility per ticker. Volatility spikes sharply inside the crisis window for all tickers, with the 2008 and 2020 crises producing the most pronounced spikes. This validates that the high-volatility mask used in conditional coverage (75th-percentile threshold) aligns with the crisis periods where interval quality matters most.}
+\includegraphics[width=0.95\linewidth]{figures/regime_volatility.pdf}
+\caption{Rolling 20-day annualized realized volatility. Volatility spikes sharply inside the crisis window for all tickers, confirming the fixed dates capture genuine regime shifts.}
 \label{fig:regime_vol}
 \end{figure}
 
