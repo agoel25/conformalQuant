@@ -2,8 +2,8 @@
 
 Implements §4 of "Adaptive Conformal Predictions for Time Series" — runs K ACI
 instances with different learning rates gamma_k in parallel and aggregates
-their intervals via online expert weighting. The paper's "FACI" label in our
-proposal refers to this family; the method itself is called AgACI.
+their intervals via online expert weighting. This family is sometimes
+labelled "FACI"; the method itself is called AgACI.
 
 Two-side aggregation: the lower and upper bounds each have their own weight
 vector driven by the corresponding side's pinball loss, so the final interval

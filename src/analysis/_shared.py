@@ -285,7 +285,7 @@ def make_wrapper(
   Back-compat API: pass ``step_size=None`` (→ split) or ``step_size>0`` (→ aci);
   older notebooks work unchanged.
 
-  Defaults to ``confidence_level=0.90`` to match the proposal / Metrics.md target.
+  Defaults to ``confidence_level=0.90`` to match the Metrics.md target.
   """
   kind = _resolve_wrapper_kind(wrapper_kind, step_size)
 

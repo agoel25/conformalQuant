@@ -1,11 +1,8 @@
 # Implementation Notes
 
-Working document.  Captures what's built, why, where the gotchas are,
-how the workflow runs end-to-end, and how long each step takes.  See
-codebase conventions an AI agent should know.
-
-Last updated: 2026-04-24 (post category-restructure + rolling-GARCH /
-TCP rewrite).
+Technical reference: what's built, why, where the gotchas are, how
+the workflow runs end-to-end, and how long each step takes.  See
+`README.md` for the overview and headline results.
 
 ---
 
@@ -38,15 +35,13 @@ TCP rewrite).
 ├── implementation.md                  # this file
 ├── requirements.txt
 ├── environment.yml                    # conda spec
-├── papers/                            # TCP, FHS, Fantazzini PDFs
 ├── datasets/                          # gitignored; cached yfinance panel
-├── results/                           # gitignored; per-cell interval CSVs +
+├── results/                           # per-cell interval CSVs +
 │                                      # metrics_long.csv aggregate
-├── report/                            # LaTeX + figures
-│   ├── report.tex / refs.bib / paper.sty
-│   └── figures/
-│       ├── timelines/<Category>/      # per-cell timeline PNGs (one per cell)
-│       └── aggregate/                 # cross-method scatter, rolling cov, etc
+├── report/                            # write-up: LaTeX source + compiled PDF
+│   ├── report.tex / refs.bib / paper.sty / report.pdf
+│   └── figures/                       # paper figures
+│       └── timelines/<Category>/      # per-cell timeline PNG/PDF (one per cell)
 ├── scripts/
 │   ├── run_grid.py                    # end-to-end runner with --only flag
 │   └── build_artifacts.py             # aggregate metrics + paper figures (CLI form of results.ipynb)
@@ -310,7 +305,7 @@ called automatically.
 
 Chronological non-obvious choices, for context if any get revisited.
 
-1. **Per-crisis refits, not one global model.** The proposal asks
+1. **Per-crisis refits, not one global model.** The core question is
    "does CP stay calibrated *into* each crisis", which needs a fresh
    pre-crisis fit, not a global 20-year model.
 2. **Crash-only ticker baskets.**  Stable baskets exist in `data.py`
@@ -339,18 +334,18 @@ Chronological non-obvious choices, for context if any get revisited.
    GARCH is fairly fitted; including them would muddy the headline
    without changing it.
 10. **Quantile Regression Forests for `tree_based`** (Meinshausen 2006)
-    instead of three pinball-loss GBMs.  More principled and matches
-    the user's intuition; one fit, every quantile readable.
+    instead of three pinball-loss GBMs.  More principled: one fit,
+    every quantile readable.
 11. **EnbPI kept implemented but excluded from main grid.**  Adds
     compute cost without changing the qualitative finding; one-line
     re-enable in `run_grid.py` if needed.
 
 ---
 
-## 8. Status
+## 8. Sanity check
 
-The pipeline is in a clean state.  Sanity check on COVID 2020
-(MCD / MGM / AZO) reproduces the expected ranking:
+COVID 2020 (MCD / MGM / AZO) ranking, used as a quick end-to-end
+check after pipeline changes:
 
 ```
 fhs              cov 0.908   W 0.128   width 0.083
@@ -359,16 +354,6 @@ linear_ar × aci  cov 0.841   W 0.155   width 0.062
 lstm × aci       cov 0.848   W 0.156   width 0.062
 transformer × aci cov 0.839  W 0.155   width 0.061
 hist_binning     cov 0.766   W 0.185   width 0.046
-tree_based       cov 0.776   W 0.186   width 0.046  (QRF; will replace ~2x slower)
+tree_based       cov 0.776   W 0.186   width 0.046  (QRF; ~2x slower)
 linear_ar × split cov 0.731  W 0.202   width 0.042
 ```
-
-What remains for the writeup:
-
-* Re-run the full grid (all 3 regimes × 9 tickers) and verify the
-  COVID-2020 ranking holds across 2008 and 2022.
-* Render the cross-method scatter and rolling-coverage figures in
-  `results.ipynb` and add them to `report/`.
-* Update `report/report.tex` with the new headline result (rolling
-  GARCH and FHS beat every CP method) — the old narrative was the
-  opposite.

@@ -43,8 +43,8 @@ quality — the CP layer is doing all the work.  This is the
 These two cover the dominant deep-learning architectures used for
 sequence forecasting:  recurrent (LSTM) and attention-based
 (Transformer encoder).  We deliberately keep them small (50 hidden
-LSTM units; `d_model=32` Transformer) because (a) the proposal calls
-out the efficient-markets prior — bigger models should not help if
+LSTM units; `d_model=32` Transformer) because (a) of the
+efficient-markets prior — bigger models should not help if
 the mean is unpredictable, and (b) the headline test is "does
 complexity help?", not "what is the best deep model?".
 
